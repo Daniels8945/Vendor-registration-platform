@@ -1,1 +1,34 @@
 @import "tailwindcss";
+
+html,
+body,
+#root {
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Tighter base for a premium, data-dense UI */
+html {
+  font-size: 14px;
+}
+
+/* Restore overflow-y-auto inside the app shell */
+#root {
+  overflow: visible;
+}
+
+/* Custom scrollbar — slim & subtle */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

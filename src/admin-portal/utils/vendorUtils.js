@@ -1,5 +1,53 @@
 // Utility functions for vendor management
 
+export const formatCurrency = (amount) =>
+  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(amount);
+
+export const logAudit = (action, details = {}) => {
+  try {
+    const entry = {
+      id: `AUDIT-${Date.now()}`,
+      action,
+      details,
+      performedBy: 'Admin',
+      timestamp: new Date().toISOString(),
+    };
+    localStorage.setItem(`audit:${entry.id}`, JSON.stringify(entry));
+  } catch (error) {
+    console.error('Error writing audit log:', error);
+  }
+};
+
+export const notifyVendorStatusChange = async (vendorId, newStatus) => {
+  try {
+    const messages = {
+      'Approved': { type: 'success', title: 'Application Approved', message: 'Congratulations! Your vendor application has been approved. You can now submit invoices and upload documents.' },
+      'Rejected': { type: 'error', title: 'Application Rejected', message: 'Unfortunately, your vendor application has been rejected. Please contact support for more information.' },
+      'Inactive': { type: 'info', title: 'Account Deactivated', message: 'Your vendor account has been set to inactive. Please contact support if you believe this is an error.' },
+      'Pending Review': { type: 'info', title: 'Application Under Review', message: 'Your vendor application has been set back to pending review. An admin will review it shortly.' },
+    };
+    const data = messages[newStatus];
+    if (!data) return;
+
+    const notificationId = `NOT-${Date.now()}`;
+    const notification = {
+      id: notificationId,
+      vendorCode: vendorId,
+      read: false,
+      createdAt: new Date().toISOString(),
+      ...data,
+    };
+    const key = `notification:${vendorId}:${notificationId}`;
+    if (window.storage) {
+      await window.storage.set(key, JSON.stringify(notification), false);
+    } else {
+      localStorage.setItem(key, JSON.stringify(notification));
+    }
+  } catch (error) {
+    console.error('Error creating status notification:', error);
+  }
+};
+
 export const generateVendorCode = (businessType) => {
   const typeCode = {
     'manufacturer': 'OSL',

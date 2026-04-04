@@ -198,6 +198,7 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Uploaded</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Expiry</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Status</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Reviewed</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Actions</th>
                 </tr>
               </thead>
@@ -220,19 +221,22 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
                       {doc.expiryDate ? formatDate(doc.expiryDate) : 'N/A'}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        {getStatusIcon(doc.status)}
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(doc.status)}`}>
-                          {doc.status}
-                        </span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          {getStatusIcon(doc.status)}
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(doc.status)}`}>
+                            {doc.status}
+                          </span>
+                        </div>
+                        {doc.status === 'Rejected' && doc.rejectionReason && (
+                          <p className="text-xs text-red-600 mt-1 max-w-xs">
+                            <span className="font-semibold">Reason:</span> {doc.rejectionReason}
+                          </p>
+                        )}
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <button
-                        className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                      >
-                        View
-                      </button>
+                    <td className="px-6 py-4 text-sm text-gray-500">
+                      {doc.reviewedAt ? formatDate(doc.reviewedAt) : '—'}
                     </td>
                   </tr>
                 ))}

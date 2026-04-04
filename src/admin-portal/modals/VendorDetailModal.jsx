@@ -47,14 +47,18 @@ const VendorDetailModal = ({ vendor, onClose }) => {
             </div>
             <div>
               <p className="text-sm font-semibold text-gray-600 mb-1">Website</p>
-              <a 
-                href={vendor.website} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="text-blue-600 hover:underline"
-              >
-                {vendor.website}
-              </a>
+              {vendor.website ? (
+                <a
+                  href={vendor.website}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  {vendor.website}
+                </a>
+              ) : (
+                <p className="text-gray-900">N/A</p>
+              )}
             </div>
           </div>
 
