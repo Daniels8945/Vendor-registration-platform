@@ -1,102 +1,140 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
-import { FileText, Plus, Search, Download, Edit, Trash2, Eye, X, MoreVertical } from 'lucide-react';
+import { FileText, Plus, Search, Download, Edit, Trash2, Eye, X, MoreVertical, History, PlusCircle, MinusCircle } from 'lucide-react';
 import { INVOICE_STATUS_COLORS } from '../utils/constants';
-import { formatDate, formatCurrency } from '../utils/vendorUtils';
+import { formatDate, formatCurrency, getVendorSettings } from '../utils/vendorUtils';
+import { getInvoice } from '../../lib/api.js';
+import { downloadInvoicePdf } from '../../lib/invoicePdf.js';
+
+const EMPTY_LINE_ITEM = { description: '', quantity: 1, unitPrice: '' };
+
+const emptyForm = () => ({
+  dueDate: '',
+  description: '',
+  notes: '',
+  lineItems: [{ ...EMPTY_LINE_ITEM }],
+});
 
 const VendorInvoicesView = ({ vendor, invoices, onSubmitInvoice, onEditInvoice, onDeleteInvoice }) => {
   const [showForm, setShowForm] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [viewingInvoice, setViewingInvoice] = useState(null);
+  const [viewHistory, setViewHistory] = useState([]);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const [deleteConfirmModal, setDeleteConfirmModal] = useState(null);
-  const [formData, setFormData] = useState({
-    invoiceDate: '',
-    dueDate: '',
-    amount: '',
-    description: '',
-    notes: ''
-  });
+  const [formData, setFormData] = useState(emptyForm());
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const settings = getVendorSettings();
+
+  // ── Line-item helpers ───────────────────────────────────────────────────────
+  const lineTotal = (item) => (Number(item.quantity) || 0) * (Number(item.unitPrice) || 0);
+  const invoiceTotal = (items) => items.reduce((s, i) => s + lineTotal(i), 0);
+
+  const addLineItem = () => setFormData(prev => ({ ...prev, lineItems: [...prev.lineItems, { ...EMPTY_LINE_ITEM }] }));
+  const removeLineItem = (idx) => setFormData(prev => ({ ...prev, lineItems: prev.lineItems.filter((_, i) => i !== idx) }));
+  const updateLineItem = (idx, field, value) =>
+    setFormData(prev => {
+      const items = prev.lineItems.map((item, i) => i === idx ? { ...item, [field]: value } : item);
+      return { ...prev, lineItems: items };
+    });
+
+  // ── Form submit ─────────────────────────────────────────────────────────────
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const total = invoiceTotal(formData.lineItems);
+    const payload = {
+      ...formData,
+      amount: total,
+      lineItems: formData.lineItems.map(item => ({
+        description: item.description,
+        quantity: Number(item.quantity) || 1,
+        unitPrice: Number(item.unitPrice) || 0,
+        amount: lineTotal(item),
+      })),
+    };
+
     let success;
     if (editingInvoice) {
-      success = await onEditInvoice(editingInvoice.id, formData);
+      success = await onEditInvoice(editingInvoice.id, payload);
     } else {
-      success = await onSubmitInvoice(formData);
+      success = await onSubmitInvoice(payload);
     }
-    
-    if (success) {
-      setFormData({
-        invoiceDate: '',
-        dueDate: '',
-        amount: '',
-        description: '',
-        notes: ''
-      });
-      setShowForm(false);
-      setEditingInvoice(null);
-    }
+    if (success) { setFormData(emptyForm()); setShowForm(false); setEditingInvoice(null); }
   };
 
   const handleEdit = (invoice) => {
     setEditingInvoice(invoice);
     setFormData({
-      invoiceDate: invoice.invoiceDate,
-      dueDate: invoice.dueDate,
-      amount: invoice.amount,
-      description: invoice.description,
-      notes: invoice.notes || ''
+      dueDate: invoice.dueDate || '',
+      description: invoice.description || '',
+      notes: invoice.notes || '',
+      lineItems: invoice.lineItems?.length
+        ? invoice.lineItems.map(li => ({ description: li.description, quantity: li.quantity, unitPrice: li.unit_price ?? li.unitPrice }))
+        : [{ ...EMPTY_LINE_ITEM }],
     });
     setShowForm(true);
     setOpenDropdown(null);
   };
 
-  const handleView = (invoice) => {
+  // ── View with status history ────────────────────────────────────────────────
+  const handleView = async (invoice) => {
     setViewingInvoice(invoice);
+    setViewHistory([]);
+    setLoadingHistory(true);
+    setOpenDropdown(null);
+    try {
+      const full = await getInvoice(invoice.id);
+      setViewingInvoice(full);
+      setViewHistory(full.statusHistory || []);
+    } catch { /* use local copy */ }
+    setLoadingHistory(false);
+  };
+
+  const handleDelete = (invoice) => { setDeleteConfirmModal(invoice); setOpenDropdown(null); };
+  const confirmDelete = async () => { if (deleteConfirmModal) { await onDeleteInvoice(deleteConfirmModal.id); setDeleteConfirmModal(null); } };
+
+  // ── Download as PDF ──────────────────────────────────────────────────────────
+  const handleDownloadPdf = (invoice) => {
+    downloadInvoicePdf(
+      { ...invoice, vendorName: vendor.companyName, vendorCode: vendor.id },
+      settings
+    );
     setOpenDropdown(null);
   };
 
-  const handleDelete = (invoice) => {
-    setDeleteConfirmModal(invoice);
-    setOpenDropdown(null);
-  };
-
-  const confirmDelete = async () => {
-    if (deleteConfirmModal) {
-      await onDeleteInvoice(deleteConfirmModal.id);
-      setDeleteConfirmModal(null);
-    }
-  };
-
+  // ── Download as text ────────────────────────────────────────────────────────
   const handleDownload = (invoice) => {
-    const invoiceText = `
-INVOICE
+    const companyName = settings.companyName || 'Vendor Portal';
+    const lineItemsText = (invoice.lineItems || []).length > 0
+      ? '\nLine Items:\n' + invoice.lineItems.map(li =>
+          `  ${li.description} | Qty: ${li.quantity} × ${formatCurrency(li.unit_price ?? li.unitPrice)} = ${formatCurrency(li.amount)}`
+        ).join('\n')
+      : '';
+
+    const text = `INVOICE
 
 Invoice Number: ${invoice.invoiceNumber}
-Invoice Date: ${formatDate(invoice.invoiceDate)}
 Due Date: ${formatDate(invoice.dueDate)}
 Amount: ${formatCurrency(invoice.amount)}
+${lineItemsText}
 
 Vendor: ${vendor.companyName}
 Vendor Code: ${vendor.id}
 
 Description:
 ${invoice.description}
-
-${invoice.notes ? `Notes:\n${invoice.notes}` : ''}
+${invoice.notes ? `\nNotes:\n${invoice.notes}` : ''}
 
 Status: ${invoice.status}
 Submitted: ${formatDate(invoice.submittedAt)}
 
 ---
-Generated by Onction Vendor Portal
-    `.trim();
+Generated by ${companyName} Vendor Portal`.trim();
 
-    const blob = new Blob([invoiceText], { type: 'text/plain' });
+    const blob = new Blob([text], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -106,32 +144,18 @@ Generated by Onction Vendor Portal
     setOpenDropdown(null);
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const filteredInvoices = invoices.filter(invoice =>
-    invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    invoice.description.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const getStatusBadge = (status) => {
     const colors = INVOICE_STATUS_COLORS[status] || { bg: 'bg-gray-100', text: 'text-gray-800' };
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>
-        {status}
-      </span>
-    );
+    return <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colors.bg} ${colors.text}`}>{status}</span>;
   };
 
-  const canEdit = (invoice) => {
-    return invoice.status === 'Submitted' || invoice.status === 'Pending Approval';
-  };
+  const canEdit = (inv) => inv.status === 'Submitted';
+  const canDelete = (inv) => inv.status === 'Submitted';
 
-  const canDelete = (invoice) => {
-    return invoice.status === 'Submitted';
-  };
+  const filteredInvoices = invoices.filter(inv =>
+    (inv.invoiceNumber || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (inv.description || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-6">
@@ -142,138 +166,115 @@ Generated by Onction Vendor Portal
           <p className="text-gray-600 mt-1">Manage and track your invoices</p>
         </div>
         <button
-          onClick={() => {
-            setShowForm(!showForm);
-            setEditingInvoice(null);
-            setFormData({
-              invoiceDate: '',
-              dueDate: '',
-              amount: '',
-              description: '',
-              notes: ''
-            });
-          }}
+          onClick={() => { setShowForm(!showForm); setEditingInvoice(null); setFormData(emptyForm()); }}
           disabled={vendor.status !== 'Approved'}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
         >
-          <Plus size={20} />
-          Submit Invoice
+          <Plus size={20} /> Submit Invoice
         </button>
       </div>
 
       {vendor.status !== 'Approved' && (
         <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
-          <p className="text-sm text-yellow-800">
-            You need to be approved before submitting invoices. Please wait for admin approval.
-          </p>
+          <p className="text-sm text-yellow-800">You need to be approved before submitting invoices.</p>
         </div>
       )}
 
-      {/* Submit/Edit Invoice Form */}
+      {/* Invoice Form */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">
-            {editingInvoice ? `Edit Invoice ${editingInvoice.invoiceNumber}` : 'Submit New Invoice'}
+            {editingInvoice ? `Edit ${editingInvoice.invoiceNumber}` : 'Submit New Invoice'}
           </h2>
-          {!editingInvoice && (
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg mb-4">
-              <p className="text-sm text-blue-800">
-                <strong>Invoice Number:</strong> Will be auto-generated (e.g., 001, 002, 003...)
-              </p>
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Line Items (P2-A) */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-sm font-semibold text-gray-700">Line Items <span className="text-red-500">*</span></label>
+                <button type="button" onClick={addLineItem} className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700 font-medium">
+                  <PlusCircle size={16} /> Add Line
+                </button>
+              </div>
+              <div className="border border-gray-200 rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-semibold text-gray-600">Description</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600 w-20">Qty</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600 w-32">Unit Price</th>
+                      <th className="text-right px-3 py-2 font-semibold text-gray-600 w-32">Total</th>
+                      <th className="w-8"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {formData.lineItems.map((item, idx) => (
+                      <tr key={idx}>
+                        <td className="px-2 py-1.5">
+                          <input type="text" required value={item.description} onChange={e => updateLineItem(idx, 'description', e.target.value)}
+                            placeholder="Service or item description"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" required min="1" step="any" value={item.quantity} onChange={e => updateLineItem(idx, 'quantity', e.target.value)}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm" />
+                        </td>
+                        <td className="px-2 py-1.5">
+                          <input type="number" required min="0" step="0.01" value={item.unitPrice} onChange={e => updateLineItem(idx, 'unitPrice', e.target.value)}
+                            placeholder="0.00"
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-right focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm" />
+                        </td>
+                        <td className="px-3 py-1.5 text-right font-semibold text-gray-900 whitespace-nowrap">
+                          {formatCurrency(lineTotal(item))}
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          {formData.lineItems.length > 1 && (
+                            <button type="button" onClick={() => removeLineItem(idx)} className="text-red-400 hover:text-red-600">
+                              <MinusCircle size={16} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-gray-50 border-t border-gray-200">
+                    <tr>
+                      <td colSpan="3" className="px-3 py-2 text-right font-bold text-gray-700">Total:</td>
+                      <td className="px-3 py-2 text-right font-bold text-gray-900">{formatCurrency(invoiceTotal(formData.lineItems))}</td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
             </div>
-          )}
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Amount (NGN) *
-                </label>
-                <input
-                  type="number"
-                  name="amount"
-                  required
-                  value={formData.amount}
-                  onChange={handleChange}
-                  placeholder="50000"
-                  min="0"
-                  step="0.01"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Invoice Date *
-                </label>
-                <input
-                  type="date"
-                  name="invoiceDate"
-                  required
-                  value={formData.invoiceDate}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Due Date *
-                </label>
-                <input
-                  type="date"
-                  name="dueDate"
-                  required
-                  value={formData.dueDate}
-                  onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Due Date</label>
+                <input type="date" name="dueDate" value={formData.dueDate} onChange={e => setFormData(p => ({ ...p, dueDate: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Description *
-              </label>
-              <textarea
-                name="description"
-                required
-                value={formData.description}
-                onChange={handleChange}
-                rows={3}
-                placeholder="Describe the services/products..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Description <span className="text-red-500">*</span></label>
+              <textarea name="description" required value={formData.description} onChange={e => setFormData(p => ({ ...p, description: e.target.value }))} rows={3}
+                placeholder="Brief description of goods/services rendered..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
 
             <div>
-              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                Notes
-              </label>
-              <textarea
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                rows={2}
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Notes</label>
+              <textarea name="notes" value={formData.notes} onChange={e => setFormData(p => ({ ...p, notes: e.target.value }))} rows={2}
                 placeholder="Additional notes..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
 
             <div className="flex gap-3">
-              <button
-                type="submit"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors"
-              >
+              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
                 {editingInvoice ? 'Update Invoice' : 'Submit Invoice'}
               </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  setEditingInvoice(null);
-                }}
-                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg font-semibold transition-colors"
-              >
+              <button type="button" onClick={() => { setShowForm(false); setEditingInvoice(null); }}
+                className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg font-semibold transition-colors">
                 Cancel
               </button>
             </div>
@@ -281,36 +282,62 @@ Generated by Onction Vendor Portal
         </div>
       )}
 
-      {/* View Invoice Modal */}
+      {/* View Invoice Modal with Status History (P2-E) */}
       {viewingInvoice && ReactDOM.createPortal(
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-9999 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b bord
-            
-            6 py-4 flex items-center justify-between">
-              <h3 className="text-2xl font-bold text-gray-900">Invoice Details</h3>
-              <button onClick={() => setViewingInvoice(null)} className="text-gray-400 hover:text-gray-600">
-                <X size={24} />
-              </button>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-bold text-gray-900">Invoice Details</h3>
+              <button onClick={() => setViewingInvoice(null)} className="text-gray-400 hover:text-gray-600"><X size={24} /></button>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 rounded-lg p-4">
-                <p className="text-sm text-gray-600 mb-1">Invoice Number</p>
-                <p className="text-xl font-mono font-bold text-blue-600">{viewingInvoice.invoiceNumber}</p>
+            <div className="p-6 space-y-5">
+              <div className="bg-blue-50 rounded-lg p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-gray-500 mb-1">Invoice Number</p>
+                  <p className="text-xl font-mono font-bold text-blue-600">{viewingInvoice.invoiceNumber}</p>
+                </div>
+                {getStatusBadge(viewingInvoice.status)}
               </div>
+
+              {/* Line Items */}
+              {viewingInvoice.lineItems?.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold text-gray-600 mb-2">Line Items</p>
+                  <div className="border border-gray-200 rounded-lg overflow-hidden text-sm">
+                    <table className="w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="text-left px-3 py-2 text-gray-600 font-semibold">Description</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-semibold">Qty</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-semibold">Unit Price</th>
+                          <th className="text-right px-3 py-2 text-gray-600 font-semibold">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {viewingInvoice.lineItems.map((li, i) => (
+                          <tr key={i}>
+                            <td className="px-3 py-2">{li.description}</td>
+                            <td className="px-3 py-2 text-right">{li.quantity}</td>
+                            <td className="px-3 py-2 text-right">{formatCurrency(li.unit_price ?? li.unitPrice)}</td>
+                            <td className="px-3 py-2 text-right font-semibold">{formatCurrency(li.amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="bg-gray-50 border-t">
+                        <tr>
+                          <td colSpan="3" className="px-3 py-2 font-bold text-right text-gray-700">Total</td>
+                          <td className="px-3 py-2 font-bold text-right text-gray-900">{formatCurrency(viewingInvoice.amount)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-gray-600 mb-1">Amount</p>
+                  <p className="text-sm font-semibold text-gray-600 mb-1">Total Amount</p>
                   <p className="text-lg font-bold text-gray-900">{formatCurrency(viewingInvoice.amount)}</p>
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-600 mb-1">Status</p>
-                  {getStatusBadge(viewingInvoice.status)}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-600 mb-1">Invoice Date</p>
-                  <p className="text-gray-900">{formatDate(viewingInvoice.invoiceDate)}</p>
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-600 mb-1">Due Date</p>
@@ -318,40 +345,61 @@ Generated by Onction Vendor Portal
                 </div>
               </div>
 
-              <div>
-                <p className="text-sm font-semibold text-gray-600 mb-1">Description</p>
-                <p className="text-gray-900 whitespace-pre-wrap">{viewingInvoice.description}</p>
-              </div>
-
-              {viewingInvoice.notes && (
+              {viewingInvoice.description && (
                 <div>
-                  <p className="text-sm font-semibold text-gray-600 mb-1">Notes</p>
-                  <p className="text-gray-900 whitespace-pre-wrap">{viewingInvoice.notes}</p>
+                  <p className="text-sm font-semibold text-gray-600 mb-1">Description</p>
+                  <p className="text-gray-900 whitespace-pre-wrap">{viewingInvoice.description}</p>
                 </div>
               )}
 
-              <div className="pt-4 border-t border-gray-200">
-                <p className="text-sm text-gray-500">Submitted: {formatDate(viewingInvoice.submittedAt)}</p>
+              {viewingInvoice.rejectionReason && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <p className="text-sm font-semibold text-red-700 mb-1">Rejection Reason</p>
+                  <p className="text-sm text-red-600">{viewingInvoice.rejectionReason}</p>
+                </div>
+              )}
+
+              {/* Status History (P2-E) */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <History size={16} className="text-gray-500" />
+                  <p className="text-sm font-semibold text-gray-700">Status History</p>
+                </div>
+                {loadingHistory ? (
+                  <p className="text-sm text-gray-400">Loading history…</p>
+                ) : viewHistory.length === 0 ? (
+                  <p className="text-sm text-gray-400">No status history available.</p>
+                ) : (
+                  <ol className="relative border-l border-gray-200 ml-3 space-y-3">
+                    {viewHistory.map((entry, i) => {
+                      const colors = INVOICE_STATUS_COLORS[entry.status] || { bg: 'bg-gray-100', text: 'text-gray-700' };
+                      return (
+                        <li key={i} className="ml-4">
+                          <span className="absolute -left-1.5 mt-1 w-3 h-3 rounded-full bg-blue-400 border-2 border-white"></span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${colors.bg} ${colors.text}`}>{entry.status}</span>
+                            <span className="text-xs text-gray-400">{formatDate(entry.changed_at)}</span>
+                            {entry.changed_by && <span className="text-xs text-gray-400">by {entry.changed_by}</span>}
+                          </div>
+                          {entry.reason && <p className="text-xs text-gray-500 mt-0.5">{entry.reason}</p>}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => handleDownload(viewingInvoice)}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2"
-                >
-                  <Download size={18} />
-                  Download
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => handleDownloadPdf(viewingInvoice)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2">
+                  <Download size={18} /> Download PDF
+                </button>
+                <button onClick={() => handleDownload(viewingInvoice)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg flex items-center justify-center gap-2 text-sm">
+                  <Download size={16} /> .txt
                 </button>
                 {canEdit(viewingInvoice) && (
-                  <button
-                    onClick={() => {
-                      setViewingInvoice(null);
-                      handleEdit(viewingInvoice);
-                    }}
-                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2"
-                  >
-                    <Edit size={18} />
-                    Edit
+                  <button onClick={() => { setViewingInvoice(null); handleEdit(viewingInvoice); }}
+                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg flex items-center justify-center gap-2">
+                    <Edit size={18} /> Edit
                   </button>
                 )}
               </div>
@@ -361,35 +409,23 @@ Generated by Onction Vendor Portal
         document.body
       )}
 
-      {/* Search Bar */}
+      {/* Search */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="text"
-            placeholder="Search invoices by number or description..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+          <input type="text" placeholder="Search invoices..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
         </div>
       </div>
 
-      {/* Invoices List */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">{/* Changed to overflow-visible */}
+      {/* Table */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-visible">
         {filteredInvoices.length === 0 ? (
           <div className="p-12 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <p className="text-gray-500 mb-4">
-              {searchTerm ? 'No invoices found' : 'No invoices submitted yet'}
-            </p>
+            <p className="text-gray-500 mb-4">{searchTerm ? 'No invoices found' : 'No invoices submitted yet'}</p>
             {!searchTerm && vendor.status === 'Approved' && (
-              <button
-                onClick={() => setShowForm(true)}
-                className="text-blue-600 hover:text-blue-700 font-semibold"
-              >
-                Submit your first invoice
-              </button>
+              <button onClick={() => setShowForm(true)} className="text-blue-600 hover:text-blue-700 font-semibold">Submit your first invoice</button>
             )}
           </div>
         ) : (
@@ -399,117 +435,65 @@ Generated by Onction Vendor Portal
                 <tr>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Invoice #</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Date</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Due Date</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Amount</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Due</th>
+                  <th className="text-right px-6 py-4 text-sm font-bold text-gray-700">Amount</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Description</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Status</th>
-                  <th className="text-right px-6 py-4 text-sm font-bold text-gray-700 w-32">Actions</th>
+                  <th className="text-right px-6 py-4 text-sm font-bold text-gray-700 w-24">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredInvoices.map((invoice) => (
+                {filteredInvoices.map(invoice => (
                   <tr key={invoice.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-sm font-semibold text-gray-900">
-                        {invoice.invoiceNumber}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {formatDate(invoice.invoiceDate)}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">
-                      {formatDate(invoice.dueDate)}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="font-semibold text-gray-900">
-                        {formatCurrency(invoice.amount)}
-                      </span>
-                    </td>
+                    <td className="px-6 py-4 font-mono text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{formatDate(invoice.submittedAt)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600 whitespace-nowrap">{formatDate(invoice.dueDate)}</td>
+                    <td className="px-6 py-4 text-right font-semibold text-gray-900 whitespace-nowrap">{formatCurrency(invoice.amount)}</td>
                     <td className="px-6 py-4 text-sm text-gray-600 max-w-xs">
                       <p className="truncate">{invoice.description}</p>
-                      {invoice.notes && (
-                        <p className="text-xs text-gray-400 truncate mt-0.5 italic">{invoice.notes}</p>
-                      )}
+                      {invoice.lineItems?.length > 0 && <p className="text-xs text-gray-400 mt-0.5">{invoice.lineItems.length} line item{invoice.lineItems.length > 1 ? 's' : ''}</p>}
                     </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(invoice.status)}
-                    </td>
+                    <td className="px-6 py-4">{getStatusBadge(invoice.status)}</td>
                     <td className="px-6 py-4 relative">
                       <div className="flex items-center justify-end">
-                        {/* Actions Dropdown - All actions inside */}
                         <div className="relative inline-block">
                           <button
                             onClick={(e) => {
-                              if (openDropdown === invoice.id) {
-                                setOpenDropdown(null);
-                              } else {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setDropdownPosition({
-                                  top: rect.bottom + window.scrollY + 4,
-                                  right: window.innerWidth - rect.right,
-                                });
-                                setOpenDropdown(invoice.id);
-                              }
+                              if (openDropdown === invoice.id) { setOpenDropdown(null); return; }
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setDropdownPosition({ top: rect.bottom + window.scrollY + 4, right: window.innerWidth - rect.right });
+                              setOpenDropdown(invoice.id);
                             }}
                             className="text-gray-600 hover:text-gray-900 hover:bg-gray-100 p-2 rounded-lg transition-colors"
-                            title="Actions"
                           >
                             <MoreVertical size={20} />
                           </button>
 
                           {openDropdown === invoice.id && (
                             <>
-                              {/* Backdrop to close dropdown */}
-                              <div
-                                className="fixed inset-0 z-40"
-                                onClick={() => setOpenDropdown(null)}
-                              ></div>
-
-                              {/* Dropdown Menu - fixed position to escape table overflow */}
-                              <div
-                                className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50"
-                                style={{ top: dropdownPosition.top, right: dropdownPosition.right }}
-                              >
-                                {/* View Option - Always available */}
-                                <button
-                                  onClick={() => handleView(invoice)}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                                >
-                                  <Eye size={16} />
-                                  View Invoice
+                              <div className="fixed inset-0 z-40" onClick={() => setOpenDropdown(null)} />
+                              <div className="fixed w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50"
+                                style={{ top: dropdownPosition.top, right: dropdownPosition.right }}>
+                                <button onClick={() => handleView(invoice)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                                  <Eye size={16} /> View Details
                                 </button>
-                                
-                                {/* Download Option - Always available */}
-                                <button
-                                  onClick={() => handleDownload(invoice)}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
-                                >
-                                  <Download size={16} />
-                                  Download
+                                <button onClick={() => handleDownloadPdf(invoice)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                                  <Download size={16} /> Download PDF
                                 </button>
-                                
-                                {/* Edit Option - Conditional */}
+                                <button onClick={() => handleDownload(invoice)} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                                  <Download size={16} /> Download .txt
+                                </button>
                                 {canEdit(invoice) && (
                                   <>
-                                    <div className="border-t border-gray-200 my-1"></div>
-                                    <button
-                                      onClick={() => handleEdit(invoice)}
-                                      className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
-                                    >
-                                      <Edit size={16} />
-                                      Edit Invoice
+                                    <div className="border-t border-gray-100 my-1" />
+                                    <button onClick={() => handleEdit(invoice)} className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2">
+                                      <Edit size={16} /> Edit
                                     </button>
                                   </>
                                 )}
-                                
-                                {/* Delete Option - Conditional */}
                                 {canDelete(invoice) && (
-                                  <button
-                                    onClick={() => handleDelete(invoice)}
-                                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                  >
-                                    <Trash2 size={16} />
-                                    Delete Invoice
+                                  <button onClick={() => handleDelete(invoice)} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2">
+                                    <Trash2 size={16} /> Delete
                                   </button>
                                 )}
                               </div>
@@ -526,50 +510,25 @@ Generated by Onction Vendor Portal
         )}
       </div>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirm */}
       {deleteConfirmModal && ReactDOM.createPortal(
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-9999 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
-                <Trash2 className="w-6 h-6 text-red-600" />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Delete Invoice?</h3>
-              <p className="text-gray-600 text-center mb-6">
-                Are you sure you want to delete invoice <span className="font-mono font-semibold">{deleteConfirmModal.invoiceNumber}</span>?
-                This action cannot be undone.
-              </p>
-              <div className="flex gap-3">
-                <button
-                  onClick={() => setDeleteConfirmModal(null)}
-                  className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
-                >
-                  Delete
-                </button>
-              </div>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-2">Delete Invoice?</h3>
+            <p className="text-gray-600 text-center mb-6">
+              Delete <span className="font-mono font-semibold">{deleteConfirmModal.invoiceNumber}</span>? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteConfirmModal(null)} className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-semibold">Cancel</button>
+              <button onClick={confirmDelete} className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold">Delete</button>
             </div>
           </div>
         </div>,
         document.body
       )}
-
-      {/* Info Box */}
-      <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">Invoice Status Flow</h3>
-        <ul className="text-sm text-blue-800 space-y-1">
-          <li>• <strong>Submitted:</strong> Invoice sent to Onction for review</li>
-          <li>• <strong>Pending Approval:</strong> Awaiting admin price approval</li>
-          <li>• <strong>Under Review:</strong> Admin is reviewing the invoice</li>
-          <li>• <strong>Approved:</strong> Invoice approved and ready for payment</li>
-          <li>• <strong>Paid:</strong> Payment has been processed</li>
-        </ul>
-      </div>
     </div>
   );
 };

@@ -1,10 +1,25 @@
 import React from 'react';
 import { FileText, Upload, Bell, User, CheckCircle, Clock, XCircle, AlertTriangle, TrendingUp, Calendar, DollarSign, Activity, Edit, Trash2 } from 'lucide-react';
-import { VENDOR_STATUS_COLORS } from '../utils/constants';
-import { formatDate, formatCurrency } from '../utils/vendorUtils';
+import { VENDOR_STATUS_COLORS, INVOICE_STATUS_COLORS } from '../utils/constants';
+import { formatDate, formatCurrency, getVendorSettings } from '../utils/vendorUtils';
 
 const VendorDashboardView = ({ vendor, invoices, documents, notifications, activities, onNavigate }) => {
   const statusInfo = VENDOR_STATUS_COLORS[vendor.status] || VENDOR_STATUS_COLORS['Pending Review'];
+  const settings = getVendorSettings();
+  const companyName = settings.companyName || 'the procurement team';
+
+  // Document expiry warnings (P2-F)
+  const today = new Date();
+  const in30Days = new Date(today); in30Days.setDate(today.getDate() + 30);
+  const expiringDocs = documents.filter(doc => {
+    if (!doc.expiryDate) return false;
+    const exp = new Date(doc.expiryDate);
+    return exp >= today && exp <= in30Days;
+  });
+  const expiredDocs = documents.filter(doc => {
+    if (!doc.expiryDate) return false;
+    return new Date(doc.expiryDate) < today;
+  });
   
   const stats = {
     invoicesSubmitted: invoices.length,
@@ -90,6 +105,37 @@ const VendorDashboardView = ({ vendor, invoices, documents, notifications, activ
       </div>
 
       {/* Status Alert */}
+      {/* Document expiry warnings (P2-F) */}
+      {expiredDocs.length > 0 && (
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-lg">
+          <div className="flex">
+            <XCircle className="w-5 h-5 text-red-600 mr-3 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-red-800">Expired Documents</p>
+              <p className="text-sm text-red-700 mt-1">
+                {expiredDocs.length} document{expiredDocs.length > 1 ? 's have' : ' has'} expired:{' '}
+                {expiredDocs.map(d => d.documentName).join(', ')}. Please re-upload updated versions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {expiringDocs.length > 0 && (
+        <div className="bg-orange-50 border-l-4 border-orange-400 p-4 rounded-lg">
+          <div className="flex">
+            <AlertTriangle className="w-5 h-5 text-orange-500 mr-3 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-orange-800">Documents Expiring Soon</p>
+              <p className="text-sm text-orange-700 mt-1">
+                {expiringDocs.map(d => `${d.documentName} (expires ${new Date(d.expiryDate).toLocaleDateString()})`).join(', ')}.
+                Please renew before expiry.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {vendor.status === 'Pending Review' && (
         <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg">
           <div className="flex">
@@ -97,7 +143,7 @@ const VendorDashboardView = ({ vendor, invoices, documents, notifications, activ
             <div>
               <p className="text-sm font-semibold text-yellow-800">Registration Under Review</p>
               <p className="text-sm text-yellow-700 mt-1">
-                Your vendor registration is being reviewed by Onction. You'll be notified once approved.
+                Your vendor registration is being reviewed by {companyName}. You'll be notified once approved.
               </p>
             </div>
           </div>
@@ -130,7 +176,7 @@ const VendorDashboardView = ({ vendor, invoices, documents, notifications, activ
                 </p>
               ) : (
                 <p className="text-sm text-red-700 mt-1">
-                  Unfortunately, your registration was not approved. Please contact Onction for more information.
+                  Unfortunately, your registration was not approved. Please contact {companyName} for more information.
                 </p>
               )}
             </div>
@@ -308,7 +354,7 @@ const VendorDashboardView = ({ vendor, invoices, documents, notifications, activ
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-gray-900 text-sm">{formatCurrency(invoice.amount)}</p>
-                    <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full">
+                    <span className={`text-xs px-2 py-1 rounded-full ${(INVOICE_STATUS_COLORS[invoice.status] || INVOICE_STATUS_COLORS['Submitted']).bg} ${(INVOICE_STATUS_COLORS[invoice.status] || INVOICE_STATUS_COLORS['Submitted']).text}`}>
                       {invoice.status}
                     </span>
                   </div>

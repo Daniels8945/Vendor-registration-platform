@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\('better-sqlite3'\\); require\\('bcryptjs'\\); require\\('jsonwebtoken'\\); require\\('multer'\\); require\\('nodemailer'\\); console.log\\('all deps OK'\\)\")"
+    ]
+  }
+}

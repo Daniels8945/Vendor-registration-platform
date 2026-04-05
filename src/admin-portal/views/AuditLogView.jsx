@@ -1,8 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { ClipboardList, Search, Trash2, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { formatDate, exportToCSV, formatCurrency } from '../utils/vendorUtils';
+import { getAuditLog, clearAuditLog } from '../../lib/api.js';
 
 const PAGE_SIZE = 50;
-import { formatDate, exportToCSV, formatCurrency } from '../utils/vendorUtils';
 
 const ACTION_LABELS = {
   vendor_created:         { label: 'Vendor Created',         color: 'bg-blue-100 text-blue-800' },
@@ -16,33 +18,25 @@ const ACTION_LABELS = {
   document_reset:         { label: 'Document Reset',         color: 'bg-gray-100 text-gray-800' },
 };
 
-const loadAuditEntries = () => {
-  try {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('audit:'));
-    return keys
-      .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-      .filter(Boolean)
-      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  } catch { return []; }
-};
-
 const AuditLogView = () => {
-  const [entries, setEntries] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [actionFilter, setActionFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    const entries = loadAuditEntries();
-    setTimeout(() => setEntries(entries), 0);
-  }, []);
+  const qc = useQueryClient();
+  const { data: entries = [] } = useQuery({
+    queryKey: ['audit-log'],
+    queryFn: getAuditLog,
+    staleTime: 30_000,
+  });
 
-  const clearLog = () => {
-    Object.keys(localStorage).filter(k => k.startsWith('audit:')).forEach(k => localStorage.removeItem(k));
-    setEntries([]);
-  };
+  const clearMutation = useMutation({
+    mutationFn: clearAuditLog,
+    onSuccess: () => qc.setQueryData(['audit-log'], []),
+  });
+  const clearLog = () => clearMutation.mutate();
 
   const formatDetails = (details) => {
     if (!details) return '—';
@@ -56,8 +50,11 @@ const AuditLogView = () => {
     return parts.length ? parts.join(' · ') : JSON.stringify(details);
   };
 
-  // Reset to page 1 when filters change
-  useEffect(() => { setPage(1); }, [searchTerm, actionFilter, dateFrom, dateTo]);
+  // Derive filtered list; reset page when filters change via handler wrappers
+  const setSearchTermAndReset = (v) => { setSearchTerm(v); setPage(1); };
+  const setActionFilterAndReset = (v) => { setActionFilter(v); setPage(1); };
+  const setDateFromAndReset = (v) => { setDateFrom(v); setPage(1); };
+  const setDateToAndReset = (v) => { setDateTo(v); setPage(1); };
 
   const filtered = entries.filter(e => {
     const matchesSearch =
@@ -115,10 +112,10 @@ const AuditLogView = () => {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input type="text" placeholder="Search by action, vendor, or details..."
-              value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+              value={searchTerm} onChange={e => setSearchTermAndReset(e.target.value)}
               className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
           </div>
-          <select value={actionFilter} onChange={e => setActionFilter(e.target.value)}
+          <select value={actionFilter} onChange={e => setActionFilterAndReset(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">
             <option value="all">All Actions</option>
             {Object.entries(ACTION_LABELS).map(([key, { label }]) => (
@@ -128,13 +125,13 @@ const AuditLogView = () => {
         </div>
         <div className="flex items-center gap-2 text-sm text-gray-600">
           <span className="font-medium">Date range:</span>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          <input type="date" value={dateFrom} onChange={e => setDateFromAndReset(e.target.value)}
             className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
           <span>to</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          <input type="date" value={dateTo} onChange={e => setDateToAndReset(e.target.value)}
             className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
           {(dateFrom || dateTo) && (
-            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-blue-600 hover:text-blue-800 text-xs underline">Clear</button>
+            <button onClick={() => { setDateFromAndReset(''); setDateToAndReset(''); }} className="text-blue-600 hover:text-blue-800 text-xs underline">Clear</button>
           )}
         </div>
       </div>

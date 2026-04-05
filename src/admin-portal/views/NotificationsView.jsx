@@ -1,16 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Bell, CheckCheck, Trash2, CheckCircle, XCircle, Info } from 'lucide-react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { formatDate } from '../utils/vendorUtils';
-
-const loadNotifications = () => {
-  try {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('notification:'));
-    return keys
-      .map(k => { try { return { _key: k, ...JSON.parse(localStorage.getItem(k)) }; } catch { return null; } })
-      .filter(Boolean)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  } catch { return []; }
-};
+import { getNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification as apiDeleteNotification } from '../../lib/api.js';
 
 const TYPE_ICONS = {
   success: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50 border-green-200' },
@@ -18,36 +10,41 @@ const TYPE_ICONS = {
   info:    { icon: Info,        color: 'text-blue-500',  bg: 'bg-blue-50 border-blue-200' },
 };
 
+const QUERY_KEY = ['admin-notifications'];
+
 const NotificationsView = () => {
-  const [notifications, setNotifications] = useState([]);
   const [filter, setFilter] = useState('all');
+  const qc = useQueryClient();
 
-  const reload = () => setNotifications(loadNotifications());
+  const { data: notifications = [] } = useQuery({
+    queryKey: QUERY_KEY,
+    queryFn: getNotifications,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
 
-  useEffect(() => { reload(); }, []);
+  const markReadMutation = useMutation({
+    mutationFn: markNotificationRead,
+    onSuccess: (_d, id) => qc.setQueryData(QUERY_KEY, prev =>
+      prev.map(n => n.id === id ? { ...n, read: true } : n)),
+  });
 
-  const markRead = (key) => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (!raw) return;
-      const n = JSON.parse(raw);
-      localStorage.setItem(key, JSON.stringify({ ...n, read: true }));
-      reload();
-    } catch { /* ignore */ }
-  };
+  const markAllMutation = useMutation({
+    mutationFn: markAllNotificationsRead,
+    onSuccess: () => qc.setQueryData(QUERY_KEY, prev => prev.map(n => ({ ...n, read: true }))),
+  });
 
-  const markAllRead = () => {
-    notifications.filter(n => !n.read).forEach(n => markRead(n._key));
-  };
+  const deleteMutation = useMutation({
+    mutationFn: apiDeleteNotification,
+    onSuccess: (_d, id) => qc.setQueryData(QUERY_KEY, prev => prev.filter(n => n.id !== id)),
+  });
 
-  const deleteNotification = (key) => {
-    localStorage.removeItem(key);
-    reload();
-  };
-
-  const clearAll = () => {
-    notifications.forEach(n => localStorage.removeItem(n._key));
-    setNotifications([]);
+  const handleMarkRead = (id) => markReadMutation.mutate(id);
+  const handleMarkAllRead = () => markAllMutation.mutate();
+  const handleDelete = (id) => deleteMutation.mutate(id);
+  const handleClearAll = async () => {
+    await Promise.all(notifications.map(n => apiDeleteNotification(n.id)));
+    qc.setQueryData(QUERY_KEY, []);
   };
 
   const filtered = filter === 'unread'
@@ -67,13 +64,13 @@ const NotificationsView = () => {
         </div>
         <div className="flex items-center gap-2">
           {unreadCount > 0 && (
-            <button onClick={markAllRead}
+            <button onClick={handleMarkAllRead}
               className="flex items-center gap-2 text-sm bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-3 py-2 rounded-lg shadow-sm transition-colors">
               <CheckCheck size={15} /> Mark all read
             </button>
           )}
           {notifications.length > 0 && (
-            <button onClick={clearAll}
+            <button onClick={handleClearAll}
               className="flex items-center gap-2 text-sm text-red-600 hover:text-red-800 border border-red-300 hover:border-red-500 px-3 py-2 rounded-lg transition-colors">
               <Trash2 size={15} /> Clear All
             </button>
@@ -110,7 +107,7 @@ const NotificationsView = () => {
             const meta = TYPE_ICONS[n.type] || TYPE_ICONS.info;
             const TypeIcon = meta.icon;
             return (
-              <div key={n._key}
+              <div key={n.id}
                 className={`flex items-start gap-3 p-4 rounded-xl border transition-colors ${n.read ? 'bg-white border-gray-200' : `${meta.bg} border`}`}>
                 <TypeIcon size={18} className={`${meta.color} mt-0.5 shrink-0`} />
                 <div className="flex-1 min-w-0">
@@ -130,12 +127,12 @@ const NotificationsView = () => {
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
                   {!n.read && (
-                    <button onClick={() => markRead(n._key)} title="Mark as read"
+                    <button onClick={() => handleMarkRead(n.id)} title="Mark as read"
                       className="p-1.5 text-gray-400 hover:text-blue-600 rounded-lg transition-colors">
                       <CheckCheck size={14} />
                     </button>
                   )}
-                  <button onClick={() => deleteNotification(n._key)} title="Delete"
+                  <button onClick={() => handleDelete(n.id)} title="Delete"
                     className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg transition-colors">
                     <Trash2 size={14} />
                   </button>
@@ -150,14 +147,3 @@ const NotificationsView = () => {
 };
 
 export default NotificationsView;
-
-export const getUnreadNotificationCount = () => {
-  try {
-    return Object.keys(localStorage)
-      .filter(k => k.startsWith('notification:'))
-      .reduce((count, k) => {
-        try { const n = JSON.parse(localStorage.getItem(k)); return n && !n.read ? count + 1 : count; }
-        catch { return count; }
-      }, 0);
-  } catch { return 0; }
-};

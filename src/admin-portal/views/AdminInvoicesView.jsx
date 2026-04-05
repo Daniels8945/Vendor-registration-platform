@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Eye, Check, X, DollarSign, Download, MoreVertical, Clock, CheckCircle, XCircle, AlertTriangle, FileDown, Package, Plus } from 'lucide-react';
-import { formatDate, formatCurrency, exportToCSV, logAudit, getSettings } from '../utils/vendorUtils';
+import { formatDate, formatCurrency, exportToCSV } from '../utils/vendorUtils';
 import { INVOICE_STATUS_COLORS } from '../utils/constants';
+import { downloadInvoicePdf } from '../../lib/invoicePdf.js';
+import { getInvoices, getVendors, getSettings, getServices, updateInvoiceStatus as apiUpdateInvoiceStatus, recordInvoicePayment, createInvoice as createInvoiceAPI, updateInvoice } from '../../lib/api.js';
 
 const PAGE_SIZE = 15;
 
@@ -30,6 +32,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
     notes: ''
   });
   const [services, setServices] = useState([]);
+  const [settings, setSettings] = useState({});
   const [serviceModal, setServiceModal] = useState(null);
   const [selectedServiceId, setSelectedServiceId] = useState('');
   const [createModal, setCreateModal] = useState(false);
@@ -43,67 +46,26 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
     notes: '',
   });
 
-  const loadAllInvoices = async () => {
-    try {
-      if (window.storage) {
-        const result = await window.storage.list('invoice:', false);
-        if (result && result.keys) {
-          const data = await Promise.all(
-            result.keys.map(async (key) => {
-              try {
-                const d = await window.storage.get(key, false);
-                return d ? JSON.parse(d.value) : null;
-              } catch { return null; }
-            })
-          );
-          setInvoices(data.filter(Boolean).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)));
-        }
-      } else {
-        const keys = Object.keys(localStorage).filter(k => k.startsWith('invoice:'));
-        const data = keys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } });
-        setInvoices(data.filter(Boolean).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)));
-      }
-    } catch (error) {
-      console.error('Error loading invoices:', error);
-    }
-  };
-
-  const loadVendors = async () => {
-    try {
-      if (window.storage) {
-        const result = await window.storage.list('vendor:', false);
-        if (result && result.keys) {
-          const data = await Promise.all(
-            result.keys.map(async (key) => {
-              try {
-                const d = await window.storage.get(key, false);
-                return d ? JSON.parse(d.value) : null;
-              } catch { return null; }
-            })
-          );
-          setVendors(data.filter(Boolean));
-        }
-      } else {
-        const keys = Object.keys(localStorage).filter(k => k.startsWith('vendor:'));
-        const data = keys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } });
-        setVendors(data.filter(Boolean));
-      }
-    } catch (error) {
-      console.error('Error loading vendors:', error);
-    }
-  };
-
   useEffect(() => {
     const run = async () => {
       setLoading(true);
-      await Promise.all([loadAllInvoices(), loadVendors()]);
+      try {
+        const [invoiceData, vendorData, serviceData, settingsData] = await Promise.all([
+          getInvoices(),
+          getVendors(),
+          getServices(),
+          getSettings(),
+        ]);
+        setInvoices(invoiceData);
+        setVendors(vendorData);
+        setServices(serviceData.filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name)));
+        setSettings(settingsData);
+      } catch (err) {
+        console.error('Error loading invoices view:', err);
+      }
       setLoading(false);
     };
     run();
-    // Load services catalogue
-    const svcKeys = Object.keys(localStorage).filter(k => k.startsWith('service:'));
-    const svcs = svcKeys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }).filter(Boolean);
-    setServices(svcs.filter(s => s.active).sort((a, b) => a.name.localeCompare(b.name)));
   }, []);
 
   const getVendorName = (vendorCode) => {
@@ -116,28 +78,17 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
     return new Date(invoice.dueDate) < new Date();
   };
 
-  const updateInvoiceStatus = async (invoice, newStatus, reason = '') => {
+  const reloadInvoices = async () => {
     try {
-      const updated = {
-        ...invoice,
-        status: newStatus,
-        statusUpdatedAt: new Date().toISOString(),
-        statusUpdatedBy: 'Admin',
-        ...(reason ? { rejectionReason: reason } : {}),
-      };
-      const key = `invoice:${invoice.vendorCode}:${invoice.id}`;
-      if (window.storage) {
-        await window.storage.set(key, JSON.stringify(updated), false);
-      } else {
-        localStorage.setItem(key, JSON.stringify(updated));
-      }
-      await createNotification(invoice.vendorCode, {
-        type: newStatus === 'Approved' ? 'success' : newStatus === 'Rejected' ? 'error' : 'info',
-        title: `Invoice ${newStatus}`,
-        message: `Your invoice ${invoice.invoiceNumber} has been ${newStatus.toLowerCase()}${reason ? '. Reason: ' + reason : ''}.`,
-      });
-      logAudit('invoice_status_changed', { vendorId: invoice.vendorCode, invoiceId: invoice.invoiceNumber, newStatus });
-      await loadAllInvoices();
+      const data = await getInvoices();
+      setInvoices(data);
+    } catch { /* ignore */ }
+  };
+
+  const handleUpdateStatus = async (invoice, newStatus, reason = '') => {
+    try {
+      await apiUpdateInvoiceStatus(invoice.id, newStatus, reason);
+      await reloadInvoices();
       setOpenDropdown(null);
       onShowToast(`Invoice ${invoice.invoiceNumber} ${newStatus.toLowerCase()}`, 'success');
     } catch (error) {
@@ -148,7 +99,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
 
   const handleRejectConfirm = async () => {
     if (!rejectModal) return;
-    await updateInvoiceStatus(rejectModal, 'Rejected', rejectReason);
+    await handleUpdateStatus(rejectModal, 'Rejected', rejectReason);
     setRejectModal(null);
     setRejectReason('');
   };
@@ -156,7 +107,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
   const bulkAction = async (action) => {
     const targets = filteredInvoices.filter(i => selectedIds.has(i.id));
     for (const invoice of targets) {
-      await updateInvoiceStatus(invoice, action);
+      await handleUpdateStatus(invoice, action);
     }
     setSelectedIds(new Set());
   };
@@ -164,29 +115,13 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
   const recordPayment = async () => {
     if (!paymentModal) return;
     try {
-      const updated = {
-        ...paymentModal,
-        status: 'Paid',
+      await recordInvoicePayment(paymentModal.id, {
         paymentDate: paymentData.paymentDate,
         paymentMethod: paymentData.paymentMethod,
         paymentReference: paymentData.referenceNumber,
         paymentNotes: paymentData.notes,
-        paidAt: new Date().toISOString(),
-        paidBy: 'Admin',
-      };
-      const key = `invoice:${paymentModal.vendorCode}:${paymentModal.id}`;
-      if (window.storage) {
-        await window.storage.set(key, JSON.stringify(updated), false);
-      } else {
-        localStorage.setItem(key, JSON.stringify(updated));
-      }
-      await createNotification(paymentModal.vendorCode, {
-        type: 'success',
-        title: 'Payment Processed',
-        message: `Payment of ${formatCurrency(paymentModal.amount)} for invoice ${paymentModal.invoiceNumber} has been processed.`,
       });
-      logAudit('invoice_payment', { vendorId: paymentModal.vendorCode, invoiceId: paymentModal.invoiceNumber, amount: paymentModal.amount });
-      await loadAllInvoices();
+      await reloadInvoices();
       setPaymentModal(null);
       setPaymentData({ paymentDate: new Date().toISOString().split('T')[0], paymentMethod: 'bank_transfer', referenceNumber: '', notes: '' });
       onShowToast(`Payment recorded for invoice ${paymentModal.invoiceNumber}`, 'success');
@@ -196,44 +131,26 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
     }
   };
 
-  const createNotification = async (vendorCode, notificationData) => {
-    try {
-      const notificationId = `NOT-${new Date().getTime()}`;
-      const notification = { id: notificationId, vendorCode, read: false, createdAt: new Date().toISOString(), ...notificationData };
-      const key = `notification:${vendorCode}:${notificationId}`;
-      if (window.storage) {
-        await window.storage.set(key, JSON.stringify(notification), false);
-      } else {
-        localStorage.setItem(key, JSON.stringify(notification));
-      }
-    } catch (error) {
-      console.error('Error creating notification:', error);
-    }
-  };
-
   const tagService = async () => {
     if (!serviceModal) return;
     const service = services.find(s => s.id === selectedServiceId) || null;
-    const updated = {
-      ...serviceModal,
-      serviceId: service?.id || null,
-      serviceName: service?.name || null,
-    };
-    const key = `invoice:${serviceModal.vendorCode}:${serviceModal.id}`;
-    if (window.storage) {
-      await window.storage.set(key, JSON.stringify(updated), false);
-    } else {
-      localStorage.setItem(key, JSON.stringify(updated));
+    try {
+      await updateInvoice(serviceModal.id, {
+        ...serviceModal,
+        serviceId: service?.id || null,
+        serviceName: service?.name || null,
+      });
+      await reloadInvoices();
+      setServiceModal(null);
+      setSelectedServiceId('');
+      onShowToast(service ? `Tagged as "${service.name}"` : 'Service tag removed', 'success');
+    } catch {
+      onShowToast('Failed to update service tag', 'error');
     }
-    await loadAllInvoices();
-    setServiceModal(null);
-    setSelectedServiceId('');
-    onShowToast(service ? `Tagged as "${service.name}"` : 'Service tag removed', 'success');
   };
 
   const openCreateModal = () => {
-    const { invoicePrefix } = getSettings();
-    const prefix = invoicePrefix || 'INV';
+    const prefix = settings.invoicePrefix || 'INV';
     const now = new Date();
     const num = `${prefix}-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getTime()).slice(-5)}`;
     setCreateData({
@@ -249,35 +166,21 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
   };
 
   const createInvoice = async () => {
-    if (!createData.vendorCode || !createData.invoiceNumber || !createData.amount || !createData.description) {
+    if (!createData.vendorCode || !createData.amount || !createData.description) {
       onShowToast('Please fill in all required fields', 'error');
       return;
     }
     try {
-      const id = `AINV-${Date.now()}`;
-      const invoice = {
-        id,
+      await createInvoiceAPI({
         vendorCode: createData.vendorCode,
-        invoiceNumber: createData.invoiceNumber,
-        invoiceDate: createData.invoiceDate,
         dueDate: createData.dueDate || null,
         amount: parseFloat(createData.amount),
         description: createData.description,
         notes: createData.notes,
-        status: 'Submitted',
-        submittedAt: new Date().toISOString(),
-        createdByAdmin: true,
-      };
-      const key = `invoice:${createData.vendorCode}:${id}`;
-      if (window.storage) {
-        await window.storage.set(key, JSON.stringify(invoice), false);
-      } else {
-        localStorage.setItem(key, JSON.stringify(invoice));
-      }
-      logAudit('invoice_created', { vendorId: createData.vendorCode, invoiceId: createData.invoiceNumber, amount: invoice.amount });
-      await loadAllInvoices();
+      });
+      await reloadInvoices();
       setCreateModal(false);
-      onShowToast(`Invoice ${createData.invoiceNumber} created`, 'success');
+      onShowToast('Invoice created successfully', 'success');
     } catch (error) {
       console.error('Error creating invoice:', error);
       onShowToast('Failed to create invoice', 'error');
@@ -294,6 +197,15 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
     a.download = `${invoice.invoiceNumber.replace(/\//g, '-')}.txt`;
     a.click();
     URL.revokeObjectURL(url);
+    setOpenDropdown(null);
+  };
+
+  const downloadInvoicePdfHandler = (invoice) => {
+    const vendor = vendors.find(v => v.id === invoice.vendorCode);
+    downloadInvoicePdf(
+      { ...invoice, vendorName: vendor?.companyName, vendorCode: invoice.vendorCode },
+      settings
+    );
     setOpenDropdown(null);
   };
 
@@ -609,9 +521,13 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
                 <Eye size={15} /> View Details
               </button>
+              <button onClick={() => downloadInvoicePdfHandler(invoice)}
+                className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
+                <Download size={15} /> Download PDF
+              </button>
               <button onClick={() => downloadInvoice(invoice)}
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
-                <Download size={15} /> Download
+                <Download size={15} /> Download .txt
               </button>
               {services.length > 0 && (
                 <button onClick={() => { setSelectedServiceId(invoice.serviceId || ''); setServiceModal(invoice); setOpenDropdown(null); }}
@@ -622,11 +538,11 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
               {!isViewer && (invoice.status === 'Submitted' || invoice.status === 'Pending Approval') && (
                 <>
                   <div className="border-t border-gray-200 my-1" />
-                  <button onClick={() => updateInvoiceStatus(invoice, 'Under Review')}
+                  <button onClick={() => handleUpdateStatus(invoice, 'Under Review')}
                     className="w-full text-left px-4 py-2 text-sm text-orange-600 hover:bg-orange-50 flex items-center gap-2">
                     <Clock size={15} /> Mark Under Review
                   </button>
-                  <button onClick={() => updateInvoiceStatus(invoice, 'Approved')}
+                  <button onClick={() => handleUpdateStatus(invoice, 'Approved')}
                     className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 flex items-center gap-2">
                     <Check size={15} /> Approve
                   </button>
@@ -639,7 +555,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
               {!isViewer && invoice.status === 'Under Review' && (
                 <>
                   <div className="border-t border-gray-200 my-1" />
-                  <button onClick={() => updateInvoiceStatus(invoice, 'Approved')}
+                  <button onClick={() => handleUpdateStatus(invoice, 'Approved')}
                     className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 flex items-center gap-2">
                     <Check size={15} /> Approve
                   </button>

@@ -153,11 +153,11 @@ const DashboardView = ({ vendors, onViewProfile, onNavigate }) => {
       {(financials.totalInvoiced > 0 || financials.totalPaid > 0) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[
-            { label: 'Total Invoiced', value: formatCurrency(financials.totalInvoiced), icon: FileText, color: 'blue' },
-            { label: 'Total Paid', value: formatCurrency(financials.totalPaid), icon: DollarSign, color: 'emerald' },
-            { label: 'Pending Payment', value: formatCurrency(financials.pendingAmount), icon: Clock, color: 'yellow' },
-            { label: `Overdue${financials.overdueCount > 0 ? ` (${financials.overdueCount})` : ''}`, value: formatCurrency(financials.overdueAmount), icon: AlertTriangle, color: financials.overdueCount > 0 ? 'red' : 'gray' },
-          ].map(({ label, value, icon: Icon, color }) => (
+            { label: 'Total Invoiced', value: formatCurrency(financials.totalInvoiced), Icon: FileText, color: 'blue' },
+            { label: 'Total Paid', value: formatCurrency(financials.totalPaid), Icon: DollarSign, color: 'emerald' },
+            { label: 'Pending Payment', value: formatCurrency(financials.pendingAmount), Icon: Clock, color: 'yellow' },
+            { label: `Overdue${financials.overdueCount > 0 ? ` (${financials.overdueCount})` : ''}`, value: formatCurrency(financials.overdueAmount), Icon: AlertTriangle, color: financials.overdueCount > 0 ? 'red' : 'gray' },
+          ].map(({ label, value, Icon, color }) => (
             <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
               <div className="flex items-center justify-between">
                 <div>

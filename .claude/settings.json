@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3001 \\\\|:5175 \")",
+      "Bash(findstr \"517\")",
+      "Bash(node -e \"import\\('@tanstack/react-query'\\).catch\\(\\(\\)=>console.log\\('not installed'\\)\\)\")",
+      "Bash(node -e \"import\\('morgan'\\).catch\\(\\(\\)=>console.log\\('not installed'\\)\\)\")"
+    ]
+  }
+}

@@ -5,6 +5,11 @@ import { STATUS_COLORS, VENDOR_STATUSES } from '../utils/constants';
 
 const PAGE_SIZE = 20;
 
+const SortIcon = ({ field, sortField, sortDir }) => {
+  if (sortField !== field) return <ChevronsUpDown size={13} className="text-gray-400 inline ml-1" />;
+  return sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-600 inline ml-1" /> : <ChevronDown size={13} className="text-blue-600 inline ml-1" />;
+};
+
 const VendorsView = ({
   vendors,
   loading,
@@ -57,11 +62,6 @@ const VendorsView = ({
   const toggleSort = (field) => {
     if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortField(field); setSortDir('asc'); }
-  };
-
-  const SortIcon = ({ field }) => {
-    if (sortField !== field) return <ChevronsUpDown size={13} className="text-gray-400 inline ml-1" />;
-    return sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-600 inline ml-1" /> : <ChevronDown size={13} className="text-blue-600 inline ml-1" />;
   };
 
   const totalPages = Math.ceil(sortedVendors.length / PAGE_SIZE);
@@ -310,23 +310,28 @@ const VendorsView = ({
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
                     <button onClick={() => toggleSort('date')} className="flex items-center hover:text-blue-600 transition-colors">
-                      Vendor Code <SortIcon field="date" />
+                      Vendor Code <SortIcon field="date" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
                     <button onClick={() => toggleSort('name')} className="flex items-center hover:text-blue-600 transition-colors">
-                      Company Name <SortIcon field="name" />
+                      Company Name <SortIcon field="name" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
                     <button onClick={() => toggleSort('type')} className="flex items-center hover:text-blue-600 transition-colors">
-                      Type <SortIcon field="type" />
+                      Type <SortIcon field="type" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Contact Person</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
+                    <button onClick={() => toggleSort('date')} className="flex items-center hover:text-blue-600 transition-colors">
+                      Date Registered <SortIcon field="date" sortField={sortField} sortDir={sortDir} />
+                    </button>
+                  </th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
                     <button onClick={() => toggleSort('status')} className="flex items-center hover:text-blue-600 transition-colors">
-                      Status <SortIcon field="status" />
+                      Status <SortIcon field="status" sortField={sortField} sortDir={sortDir} />
                     </button>
                   </th>
                   <th className="text-right px-6 py-4 text-sm font-bold text-gray-700 w-20">Actions</th>
@@ -363,6 +368,9 @@ const VendorsView = ({
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-700">{vendor.firstName} {vendor.lastName}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+                      {vendor.submittedAt ? new Date(vendor.submittedAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—'}
+                    </td>
                     <td className="px-6 py-4">{getStatusBadge(vendor.status)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center justify-end">
