@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UserPlus, Search, Filter, Check, X, Ban, MoreVertical, Eye, Trash2, UserCircle, FileDown, Upload, AlertCircle, AlertTriangle } from 'lucide-react';
+import { UserPlus, Search, Filter, Check, X, Ban, MoreVertical, Eye, Trash2, UserCircle, FileDown, Upload, AlertCircle, AlertTriangle, ChevronUp, ChevronDown, ChevronsUpDown, Copy } from 'lucide-react';
 import { getBusinessTypeLabel, exportToCSV, generateVendorCode, saveVendor, logAudit } from '../utils/vendorUtils';
 import { STATUS_COLORS, VENDOR_STATUSES } from '../utils/constants';
 
@@ -28,6 +28,12 @@ const VendorsView = ({
   const [page, setPage] = useState(1);
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef(null);
+  const [sortField, setSortField] = useState('');
+  const [sortDir, setSortDir] = useState('asc');
+  const [copiedId, setCopiedId] = useState(null);
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false);
+  const [bulkRejectModal, setBulkRejectModal] = useState(false);
+  const [bulkRejectReason, setBulkRejectReason] = useState('');
 
   const filteredVendors = vendors.filter(vendor => {
     const matchesSearch =
@@ -39,8 +45,27 @@ const VendorsView = ({
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const totalPages = Math.ceil(filteredVendors.length / PAGE_SIZE);
-  const pagedVendors = filteredVendors.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const sortedVendors = [...filteredVendors].sort((a, b) => {
+    if (!sortField) return 0;
+    let aVal = sortField === 'name' ? a.companyName : sortField === 'status' ? a.status : sortField === 'type' ? a.businessType : sortField === 'date' ? a.submittedAt : '';
+    let bVal = sortField === 'name' ? b.companyName : sortField === 'status' ? b.status : sortField === 'type' ? b.businessType : sortField === 'date' ? b.submittedAt : '';
+    if (aVal < bVal) return sortDir === 'asc' ? -1 : 1;
+    if (aVal > bVal) return sortDir === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const toggleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortField(field); setSortDir('asc'); }
+  };
+
+  const SortIcon = ({ field }) => {
+    if (sortField !== field) return <ChevronsUpDown size={13} className="text-gray-400 inline ml-1" />;
+    return sortDir === 'asc' ? <ChevronUp size={13} className="text-blue-600 inline ml-1" /> : <ChevronDown size={13} className="text-blue-600 inline ml-1" />;
+  };
+
+  const totalPages = Math.ceil(sortedVendors.length / PAGE_SIZE);
+  const pagedVendors = sortedVendors.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const allSelected = pagedVendors.length > 0 && pagedVendors.every(v => selectedIds.has(v.id));
   const someSelected = selectedIds.size > 0;
@@ -61,16 +86,28 @@ const VendorsView = ({
     });
   };
 
-  const bulkAction = async (action) => {
-    const targets = filteredVendors.filter(v => selectedIds.has(v.id));
+  const bulkAction = async (action, reason = '') => {
+    const targets = sortedVendors.filter(v => selectedIds.has(v.id));
     for (const vendor of targets) {
       if (action === 'delete') {
         onDeleteVendor(vendor);
       } else {
-        await onUpdateStatus(vendor.id, action);
+        await onUpdateStatus(vendor.id, action, reason);
       }
     }
     setSelectedIds(new Set());
+  };
+
+  const handleBulkDelete = () => setBulkDeleteConfirm(true);
+  const handleBulkDeleteConfirm = () => { bulkAction('delete'); setBulkDeleteConfirm(false); };
+  const handleBulkRejectOpen = () => { setBulkRejectReason(''); setBulkRejectModal(true); };
+  const handleBulkRejectConfirm = () => { bulkAction(VENDOR_STATUSES.REJECTED, bulkRejectReason); setBulkRejectModal(false); setBulkRejectReason(''); };
+
+  const handleCopyId = (id) => {
+    navigator.clipboard.writeText(id).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
   };
 
   const getStatusBadge = (status) => {
@@ -224,7 +261,7 @@ const VendorsView = ({
               className="flex items-center gap-1 text-sm bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg">
               <Check size={13} /> Approve All
             </button>
-            <button onClick={() => bulkAction(VENDOR_STATUSES.REJECTED)}
+            <button onClick={handleBulkRejectOpen}
               className="flex items-center gap-1 text-sm bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg">
               <X size={13} /> Reject All
             </button>
@@ -235,6 +272,10 @@ const VendorsView = ({
             <button onClick={() => bulkAction(VENDOR_STATUSES.PENDING)}
               className="flex items-center gap-1 text-sm bg-yellow-500 hover:bg-yellow-600 text-white px-3 py-1.5 rounded-lg">
               <Check size={13} /> Set to Review
+            </button>
+            <button onClick={handleBulkDelete}
+              className="flex items-center gap-1 text-sm bg-white border border-red-300 text-red-600 hover:bg-red-50 px-3 py-1.5 rounded-lg">
+              <Trash2 size={13} /> Delete All
             </button>
           </div>
           <button onClick={() => setSelectedIds(new Set())}
@@ -249,7 +290,7 @@ const VendorsView = ({
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
             <p className="text-gray-600 mt-4">Loading vendors...</p>
           </div>
-        ) : filteredVendors.length === 0 ? (
+        ) : sortedVendors.length === 0 ? (
           <div className="p-12 text-center">
             <p className="text-gray-500 mb-4">
               {statusFilter !== 'all' || typeFilter !== 'all' ? 'No vendors match your filters' : 'No vendors found'}
@@ -267,11 +308,27 @@ const VendorsView = ({
                     <input type="checkbox" checked={allSelected} onChange={toggleAll}
                       className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                   </th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Vendor Code</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Company Name</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Type</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
+                    <button onClick={() => toggleSort('date')} className="flex items-center hover:text-blue-600 transition-colors">
+                      Vendor Code <SortIcon field="date" />
+                    </button>
+                  </th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
+                    <button onClick={() => toggleSort('name')} className="flex items-center hover:text-blue-600 transition-colors">
+                      Company Name <SortIcon field="name" />
+                    </button>
+                  </th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
+                    <button onClick={() => toggleSort('type')} className="flex items-center hover:text-blue-600 transition-colors">
+                      Type <SortIcon field="type" />
+                    </button>
+                  </th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Contact Person</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Status</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">
+                    <button onClick={() => toggleSort('status')} className="flex items-center hover:text-blue-600 transition-colors">
+                      Status <SortIcon field="status" />
+                    </button>
+                  </th>
                   <th className="text-right px-6 py-4 text-sm font-bold text-gray-700 w-20">Actions</th>
                 </tr>
               </thead>
@@ -284,7 +341,17 @@ const VendorsView = ({
                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                     </td>
                     <td className="px-6 py-4">
-                      <span className="font-mono text-sm font-semibold text-blue-600">{vendor.id}</span>
+                      <button
+                        onClick={() => handleCopyId(vendor.id)}
+                        title="Click to copy vendor ID"
+                        className="flex items-center gap-1 group"
+                      >
+                        <span className="font-mono text-sm font-semibold text-blue-600">{vendor.id}</span>
+                        {copiedId === vendor.id
+                          ? <Check size={12} className="text-green-500 shrink-0" />
+                          : <Copy size={12} className="text-gray-300 group-hover:text-blue-400 shrink-0 transition-colors" />
+                        }
+                      </button>
                     </td>
                     <td className="px-6 py-4">
                       <div className="font-medium text-gray-900">{vendor.companyName}</div>
@@ -317,7 +384,7 @@ const VendorsView = ({
       {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-gray-600">
-          <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, filteredVendors.length)} of {filteredVendors.length} vendors</span>
+          <span>Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, sortedVendors.length)} of {sortedVendors.length} vendors</span>
           <div className="flex items-center gap-1">
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
               className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Prev</button>
@@ -332,6 +399,67 @@ const VendorsView = ({
               ))}
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
               className="px-3 py-1.5 rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Delete Confirmation Modal */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600" />
+            </div>
+            <h3 className="text-xl font-bold text-gray-900 text-center mb-1">Delete {selectedIds.size} vendor{selectedIds.size > 1 ? 's' : ''}?</h3>
+            <p className="text-gray-500 text-center text-sm mb-6">This action cannot be undone. All vendor data will be permanently removed.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setBulkDeleteConfirm(false)}
+                className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
+                Cancel
+              </button>
+              <button onClick={handleBulkDeleteConfirm}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
+                Delete All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Rejection Reason Modal */}
+      {bulkRejectModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-center w-12 h-12 bg-red-100 rounded-full mx-auto mb-4">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 text-center mb-1">Reject {selectedIds.size} vendor{selectedIds.size > 1 ? 's' : ''}?</h3>
+              <p className="text-gray-500 text-center text-sm mb-4">Optionally provide a rejection reason that will be sent to all selected vendors.</p>
+              <div className="mb-5">
+                <label className="block text-sm font-semibold text-gray-700 mb-1.5">
+                  Rejection Reason <span className="text-gray-400 font-normal">(optional)</span>
+                </label>
+                <textarea
+                  value={bulkRejectReason}
+                  onChange={e => setBulkRejectReason(e.target.value)}
+                  rows={3}
+                  placeholder="Explain why these vendors are being rejected..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 resize-none text-sm"
+                  autoFocus
+                />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { setBulkRejectModal(false); setBulkRejectReason(''); }}
+                  className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
+                  Cancel
+                </button>
+                <button onClick={handleBulkRejectConfirm}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-semibold text-sm transition-colors">
+                  Reject All
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

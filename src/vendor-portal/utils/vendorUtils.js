@@ -90,6 +90,21 @@ export const submitInvoice = async (vendorCode, invoiceData) => {
       metadata: { invoiceId, invoiceNumber, amount: invoiceData.amount }
     });
 
+    // Notify admin
+    try {
+      const adminNotifId = `NOT-ADMIN-${Date.now()}`;
+      const adminNotif = {
+        id: adminNotifId,
+        vendorCode,
+        type: 'info',
+        title: 'New Invoice Submitted',
+        message: `${vendorCode} submitted invoice ${invoiceNumber} for ${new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(invoiceData.amount || 0)}.`,
+        read: false,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(`notification:admin:${adminNotifId}`, JSON.stringify(adminNotif));
+    } catch { /* non-critical */ }
+
     return { success: true, invoice };
   } catch (error) {
     console.error('Error submitting invoice:', error);
@@ -249,12 +264,48 @@ export const uploadDocument = async (vendorCode, documentData) => {
     };
 
     const key = `document:${vendorCode}:${docId}`;
-    
+
     if (window.storage) {
       await window.storage.set(key, JSON.stringify(document), false);
     } else {
       localStorage.setItem(key, JSON.stringify(document));
     }
+
+    // Log activity on vendor side
+    await logActivity(vendorCode, {
+      type: 'document_uploaded',
+      title: 'Document Uploaded',
+      description: `Uploaded "${documentData.documentName}" (${documentData.documentType})`,
+      metadata: { docId, documentName: documentData.documentName }
+    });
+
+    // Write to admin audit log
+    try {
+      const auditId = `audit:DOC-${Date.now()}`;
+      const auditEntry = {
+        id: auditId,
+        action: 'document_uploaded',
+        timestamp: new Date().toISOString(),
+        performedBy: vendorCode,
+        details: { vendorCode, docId, documentName: documentData.documentName, documentType: documentData.documentType }
+      };
+      localStorage.setItem(auditId, JSON.stringify(auditEntry));
+    } catch { /* non-critical */ }
+
+    // Notify admin
+    try {
+      const adminNotifId = `NOT-ADMIN-${Date.now()}`;
+      const adminNotif = {
+        id: adminNotifId,
+        vendorCode,
+        type: 'info',
+        title: 'New Document Uploaded',
+        message: `${vendorCode} uploaded "${documentData.documentName}" (${documentData.documentType}) — pending review.`,
+        read: false,
+        createdAt: new Date().toISOString()
+      };
+      localStorage.setItem(`notification:admin:${adminNotifId}`, JSON.stringify(adminNotif));
+    } catch { /* non-critical */ }
 
     return { success: true, document };
   } catch (error) {

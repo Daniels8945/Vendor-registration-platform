@@ -527,7 +527,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {pagedInvoices.map(invoice => (
-                  <tr key={invoice.id} className={`hover:bg-gray-50 transition-colors ${selectedIds.has(invoice.id) ? 'bg-blue-50' : ''}`}>
+                  <tr key={invoice.id} className={`transition-colors ${selectedIds.has(invoice.id) ? 'bg-blue-50 hover:bg-blue-50' : isOverdue(invoice) ? 'bg-orange-50 hover:bg-orange-100' : 'hover:bg-gray-50'}`}>
                     <td className="px-6 py-4">
                       <input type="checkbox" checked={selectedIds.has(invoice.id)} onChange={() => toggleOne(invoice.id)}
                         className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />

@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Eye, Check, X, FileText, Upload, RotateCcw, Download } from 'lucide-react';
+import { Search, Filter, Eye, Check, X, FileText, Upload, RotateCcw, Download, AlertTriangle } from 'lucide-react';
 import { formatDate, formatDocumentType, exportToCSV } from '../utils/vendorUtils';
 import { DOC_STATUS_COLORS } from '../utils/constants';
 import { FileDown } from 'lucide-react';
+
+const getExpiryStatus = (expiryDate) => {
+  if (!expiryDate) return null;
+  const now = new Date();
+  const exp = new Date(expiryDate);
+  const daysLeft = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+  if (daysLeft < 0) return { label: 'Expired', color: 'text-red-600 bg-red-50', days: daysLeft };
+  if (daysLeft <= 30) return { label: `Expires in ${daysLeft}d`, color: 'text-orange-600 bg-orange-50', days: daysLeft };
+  return null;
+};
 
 const AdminDocumentsView = ({ onShowToast }) => {
   const [documents, setDocuments] = useState([]);
@@ -11,6 +21,7 @@ const AdminDocumentsView = ({ onShowToast }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [vendorFilter, setVendorFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all');
   const [viewingDocument, setViewingDocument] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -249,10 +260,13 @@ const AdminDocumentsView = ({ onShowToast }) => {
       getVendorName(document.vendorCode).toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || document.status === statusFilter;
     const matchesVendor = vendorFilter === 'all' || document.vendorCode === vendorFilter;
+    const matchesType = typeFilter === 'all' || document.documentType === typeFilter;
     const matchesFrom = !dateFrom || new Date(document.uploadedAt) >= new Date(dateFrom);
     const matchesTo = !dateTo || new Date(document.uploadedAt) <= new Date(dateTo + 'T23:59:59');
-    return matchesSearch && matchesStatus && matchesVendor && matchesFrom && matchesTo;
+    return matchesSearch && matchesStatus && matchesVendor && matchesType && matchesFrom && matchesTo;
   });
+
+  const documentTypes = [...new Set(documents.map(d => d.documentType).filter(Boolean))].sort();
 
   const stats = {
     total: documents.length,
@@ -260,6 +274,13 @@ const AdminDocumentsView = ({ onShowToast }) => {
     approved: documents.filter(d => d.status === 'Approved').length,
     rejected: documents.filter(d => d.status === 'Rejected').length
   };
+
+  const expiryAlerts = documents
+    .filter(d => d.status !== 'Rejected')
+    .map(d => ({ ...d, expiry: getExpiryStatus(d.expiryDate) }))
+    .filter(d => d.expiry !== null)
+    .sort((a, b) => a.expiry.days - b.expiry.days)
+    .slice(0, 5);
 
   return (
     <div className="space-y-6">
@@ -326,6 +347,30 @@ const AdminDocumentsView = ({ onShowToast }) => {
         </div>
       </div>
 
+      {/* Expiry Warnings */}
+      {expiryAlerts.length > 0 && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <AlertTriangle size={16} className="text-orange-500" />
+            <span className="text-sm font-bold text-orange-800">
+              {expiryAlerts.filter(d => d.expiry.days < 0).length > 0
+                ? `${expiryAlerts.filter(d => d.expiry.days < 0).length} expired document${expiryAlerts.filter(d => d.expiry.days < 0).length > 1 ? 's' : ''} · `
+                : ''}{expiryAlerts.filter(d => d.expiry.days >= 0).length} expiring soon
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {expiryAlerts.map(d => (
+              <div key={d.id} className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg ${d.expiry.color}`}>
+                <AlertTriangle size={12} />
+                <span className="font-semibold">{d.documentName}</span>
+                <span className="text-gray-500 font-mono text-[10px]">{d.vendorCode}</span>
+                <span>— {d.expiry.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Search and Filters */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
         <div className="flex flex-col md:flex-row gap-4">
@@ -357,6 +402,11 @@ const AdminDocumentsView = ({ onShowToast }) => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">
               <option value="all">All Vendors</option>
               {vendors.map(v => <option key={v.id} value={v.id}>{v.companyName}</option>)}
+            </select>
+            <select value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">
+              <option value="all">All Types</option>
+              {documentTypes.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
         </div>
@@ -393,6 +443,7 @@ const AdminDocumentsView = ({ onShowToast }) => {
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Type</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Vendor</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Uploaded</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Expiry</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Status</th>
                   <th className="text-right px-6 py-4 text-sm font-bold text-gray-700">Actions</th>
                 </tr>
@@ -417,6 +468,19 @@ const AdminDocumentsView = ({ onShowToast }) => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {formatDate(document.uploadedAt)}
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      {(() => {
+                        if (!document.expiryDate) return <span className="text-gray-400">—</span>;
+                        const exp = getExpiryStatus(document.expiryDate);
+                        return exp ? (
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ${exp.color}`}>
+                            <AlertTriangle size={11} /> {exp.label}
+                          </span>
+                        ) : (
+                          <span className="text-gray-600">{formatDate(document.expiryDate)}</span>
+                        );
+                      })()}
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(document.status)}

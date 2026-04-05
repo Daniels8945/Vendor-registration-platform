@@ -1,8 +1,10 @@
 import React from 'react';
-import { Bell, CheckCircle, AlertCircle, Info, Clock } from 'lucide-react';
+import { Bell, CheckCheck, Trash2, CheckCircle, AlertCircle, Info, Clock } from 'lucide-react';
 import { formatDate } from '../utils/vendorUtils';
 
-const VendorNotificationsView = ({ notifications }) => {
+const VendorNotificationsView = ({ notifications, onMarkRead, onMarkAllRead, onDelete }) => {
+  const unreadCount = notifications.filter(n => !n.read).length;
+
   const getNotificationIcon = (type) => {
     switch(type) {
       case 'success':
@@ -32,9 +34,23 @@ const VendorNotificationsView = ({ notifications }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
-        <p className="text-gray-600 mt-1">View all messages and updates from Onction</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
+          <p className="text-gray-600 mt-1">
+            {unreadCount > 0
+              ? `${unreadCount} unread notification${unreadCount !== 1 ? 's' : ''}`
+              : 'View all messages and updates from Onction'}
+          </p>
+        </div>
+        {unreadCount > 0 && onMarkAllRead && (
+          <button
+            onClick={onMarkAllRead}
+            className="flex items-center gap-2 text-sm bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-3 py-2 rounded-lg shadow-sm transition-colors"
+          >
+            <CheckCheck size={15} /> Mark all read
+          </button>
+        )}
       </div>
 
       {/* Notifications Timeline */}
@@ -52,7 +68,7 @@ const VendorNotificationsView = ({ notifications }) => {
 
             {/* Notifications */}
             <div className="space-y-6">
-              {notifications.map((notification, index) => (
+              {notifications.map((notification) => (
                 <div key={notification.id} className="relative pl-14">
                   {/* Timeline dot */}
                   <div className="absolute left-4 -ml-2 flex items-center justify-center w-4 h-4 bg-white">
@@ -67,19 +83,39 @@ const VendorNotificationsView = ({ notifications }) => {
                   }`}>
                     <div className="flex items-start gap-3">
                       {/* Icon */}
-                      <div className="flex-shrink-0">
+                      <div className="shrink-0">
                         {getNotificationIcon(notification.type || 'info')}
                       </div>
 
                       {/* Content */}
                       <div className="flex-1">
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between gap-2">
                           <h3 className="font-semibold text-gray-900">{notification.title}</h3>
-                          {!notification.read && (
-                            <span className="ml-2 px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
-                              New
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 shrink-0">
+                            {!notification.read && (
+                              <span className="px-2 py-0.5 bg-blue-600 text-white text-xs rounded-full">
+                                New
+                              </span>
+                            )}
+                            {!notification.read && onMarkRead && (
+                              <button
+                                onClick={() => onMarkRead(notification.id)}
+                                title="Mark as read"
+                                className="p-1 text-gray-400 hover:text-blue-600 rounded transition-colors"
+                              >
+                                <CheckCheck size={14} />
+                              </button>
+                            )}
+                            {onDelete && (
+                              <button
+                                onClick={() => onDelete(notification.id)}
+                                title="Delete"
+                                className="p-1 text-gray-400 hover:text-red-600 rounded transition-colors"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm text-gray-700 mt-1 whitespace-pre-wrap">{notification.message}</p>
                         <div className="flex items-center gap-2 mt-3 text-xs text-gray-500">
@@ -99,7 +135,7 @@ const VendorNotificationsView = ({ notifications }) => {
       {/* Help Section */}
       <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-lg">
         <div className="flex">
-          <Info className="w-5 h-5 text-blue-600 mr-3 flex-shrink-0 mt-0.5" />
+          <Info className="w-5 h-5 text-blue-600 mr-3 shrink-0 mt-0.5" />
           <div>
             <p className="text-sm font-semibold text-blue-900">About Notifications</p>
             <ul className="text-sm text-blue-800 mt-2 space-y-1">

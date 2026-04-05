@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Package, Plus, Search, Edit, Trash2, X, Check } from 'lucide-react';
+import { formatCurrency } from '../utils/vendorUtils';
 
 const SERVICE_CATEGORIES = ['IT & Software', 'Logistics', 'Manufacturing', 'Consulting', 'Maintenance', 'Supply', 'Other'];
 
@@ -105,9 +106,6 @@ const ServicesView = () => {
     (s.description || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const formatCurrency = (amount) =>
-    new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(amount || 0);
-
   return (
     <div className="space-y-6">
       {/* Toast */}
@@ -172,7 +170,7 @@ const ServicesView = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Unit Price (NGN)</label>
+                <label className="block text-sm font-semibold text-gray-700 mb-1">Unit Price</label>
                 <input
                   type="number" name="unitPrice" min="0" step="0.01" value={formData.unitPrice} onChange={handleChange}
                   placeholder="0.00"

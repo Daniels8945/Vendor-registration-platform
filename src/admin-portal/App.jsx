@@ -47,6 +47,7 @@ const App = () => {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchIdx, setSearchIdx] = useState(-1);
   const searchInputRef = useRef(null);
 
   const fetchVendors = async () => {
@@ -165,6 +166,7 @@ const App = () => {
           <DashboardView
             vendors={vendors}
             onViewProfile={(vendor) => { setProfileVendor(vendor); setCurrentView('vendor-profile'); }}
+            onNavigate={setCurrentView}
           />
         );
       case 'vendors':
@@ -215,7 +217,7 @@ const App = () => {
           if (!s.adminPassword) sessionStorage.removeItem('admin:auth');
         }} />;
       default:
-        return <DashboardView vendors={vendors} onViewProfile={(vendor) => { setProfileVendor(vendor); setCurrentView('vendor-profile'); }} />;
+        return <DashboardView vendors={vendors} onViewProfile={(vendor) => { setProfileVendor(vendor); setCurrentView('vendor-profile'); }} onNavigate={setCurrentView} />;
     }
   };
 
@@ -271,8 +273,9 @@ const App = () => {
         e.preventDefault();
         setSearchOpen(o => !o);
         setSearchQuery('');
+        setSearchIdx(-1);
       }
-      if (e.key === 'Escape') setSearchOpen(false);
+      if (e.key === 'Escape') { setSearchOpen(false); setSearchIdx(-1); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -281,6 +284,21 @@ const App = () => {
   useEffect(() => {
     if (searchOpen) setTimeout(() => searchInputRef.current?.focus(), 50);
   }, [searchOpen]);
+
+
+  const handleSearchKeyDown = (e) => {
+    if (searchResults.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSearchIdx(i => Math.min(i + 1, searchResults.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSearchIdx(i => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter' && searchIdx >= 0) {
+      e.preventDefault();
+      handleSearchSelect(searchResults[searchIdx]);
+    }
+  };
 
   const handleSearchSelect = (result) => {
     setSearchOpen(false);
@@ -325,7 +343,8 @@ const App = () => {
                 ref={searchInputRef}
                 type="text"
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => { setSearchQuery(e.target.value); setSearchIdx(-1); }}
+                onKeyDown={handleSearchKeyDown}
                 placeholder="Search vendors, invoices, documents..."
                 className="flex-1 text-sm outline-none placeholder-gray-400"
               />
@@ -350,7 +369,7 @@ const App = () => {
                   return (
                     <li key={idx}>
                       <button onClick={() => handleSearchSelect(r)}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-blue-50 text-left transition-colors">
+                        className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${idx === searchIdx ? 'bg-blue-50' : 'hover:bg-blue-50'}`}>
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                           r.type === 'vendor' ? 'bg-blue-100 text-blue-600' :
                           r.type === 'invoice' ? 'bg-green-100 text-green-600' :

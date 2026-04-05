@@ -10,7 +10,7 @@ const getPeriodStart = (period) => {
   return null;
 };
 
-const DashboardView = ({ vendors, onViewProfile }) => {
+const DashboardView = ({ vendors, onViewProfile, onNavigate }) => {
   const [period, setPeriod] = useState('all');
   const periodStart = getPeriodStart(period);
   const filteredVendors = periodStart
@@ -30,20 +30,25 @@ const DashboardView = ({ vendors, onViewProfile }) => {
       return { invoices: allInvoices, docs: allDocs };
     };
     Promise.resolve(load()).then(({ invoices, docs }) => {
+      // Always show pending counts from all-time data (for action alerts)
       setPendingInvoices(invoices.filter(i => ['Submitted', 'Pending Approval', 'Under Review'].includes(i.status)).slice(0, 5));
       setPendingDocs(docs.filter(d => d.status === 'Pending Review').slice(0, 5));
+      // Apply period filter to financial metrics
+      const periodFiltered = periodStart
+        ? invoices.filter(i => new Date(i.submittedAt) >= periodStart)
+        : invoices;
       const now = new Date();
-      const active = invoices.filter(i => i.status !== 'Rejected');
-      const overdue = invoices.filter(i => !['Paid', 'Rejected'].includes(i.status) && i.dueDate && new Date(i.dueDate) < now);
+      const active = periodFiltered.filter(i => i.status !== 'Rejected');
+      const overdue = periodFiltered.filter(i => !['Paid', 'Rejected'].includes(i.status) && i.dueDate && new Date(i.dueDate) < now);
       setFinancials({
         totalInvoiced: active.reduce((s, i) => s + Number(i.amount || 0), 0),
-        totalPaid: invoices.filter(i => i.status === 'Paid').reduce((s, i) => s + Number(i.amount || 0), 0),
-        pendingAmount: invoices.filter(i => ['Submitted', 'Pending Approval', 'Under Review', 'Approved'].includes(i.status)).reduce((s, i) => s + Number(i.amount || 0), 0),
+        totalPaid: periodFiltered.filter(i => i.status === 'Paid').reduce((s, i) => s + Number(i.amount || 0), 0),
+        pendingAmount: periodFiltered.filter(i => ['Submitted', 'Pending Approval', 'Under Review', 'Approved'].includes(i.status)).reduce((s, i) => s + Number(i.amount || 0), 0),
         overdueAmount: overdue.reduce((s, i) => s + Number(i.amount || 0), 0),
         overdueCount: overdue.length,
       });
     });
-  }, []);
+  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statCards = [
     { label: 'Total Vendors', value: stats.total, icon: Users, color: 'blue' },
@@ -71,9 +76,9 @@ const DashboardView = ({ vendors, onViewProfile }) => {
   const maxType = Math.max(stats.manufacturers, stats.distributors, stats.serviceProviders, 1);
 
   const pendingActions = [
-    stats.pending > 0 && { icon: Bell, color: 'text-yellow-600 bg-yellow-50', label: `${stats.pending} vendor${stats.pending > 1 ? 's' : ''} awaiting review` },
-    pendingInvoices.length > 0 && { icon: FileText, color: 'text-blue-600 bg-blue-50', label: `${pendingInvoices.length} invoice${pendingInvoices.length > 1 ? 's' : ''} need attention` },
-    pendingDocs.length > 0 && { icon: Upload, color: 'text-orange-600 bg-orange-50', label: `${pendingDocs.length} document${pendingDocs.length > 1 ? 's' : ''} pending review` },
+    stats.pending > 0 && { icon: Bell, color: 'text-yellow-600 bg-yellow-50', label: `${stats.pending} vendor${stats.pending > 1 ? 's' : ''} awaiting review`, view: 'vendors' },
+    pendingInvoices.length > 0 && { icon: FileText, color: 'text-blue-600 bg-blue-50', label: `${pendingInvoices.length} invoice${pendingInvoices.length > 1 ? 's' : ''} need attention`, view: 'invoices' },
+    pendingDocs.length > 0 && { icon: Upload, color: 'text-orange-600 bg-orange-50', label: `${pendingDocs.length} document${pendingDocs.length > 1 ? 's' : ''} pending review`, view: 'documents' },
   ].filter(Boolean);
 
   return (
@@ -110,10 +115,14 @@ const DashboardView = ({ vendors, onViewProfile }) => {
             {pendingActions.map((action, idx) => {
               const ActionIcon = action.icon;
               return (
-                <div key={idx} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${action.color}`}>
+                <button
+                  key={idx}
+                  onClick={() => onNavigate && onNavigate(action.view)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${action.color} hover:opacity-80 transition-opacity cursor-pointer`}
+                >
                   <ActionIcon size={15} />
                   {action.label}
-                </div>
+                </button>
               );
             })}
           </div>

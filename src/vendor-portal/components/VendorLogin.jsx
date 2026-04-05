@@ -30,7 +30,14 @@ const VendorLogin = ({ onLogin }) => {
       }
 
       if (vendor) {
-        onLogin(vendor);
+        if (vendor.status === 'Rejected') {
+          const reason = vendor.rejectionReason
+            ? `Reason: ${vendor.rejectionReason}`
+            : 'Please contact Onction for more information.';
+          setError(`Your vendor application was not approved. ${reason}`);
+        } else {
+          onLogin(vendor);
+        }
       } else {
         setError('Vendor code not found. Please check your code or contact Onction.');
       }

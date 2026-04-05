@@ -124,9 +124,15 @@ const VendorDashboardView = ({ vendor, invoices, documents, notifications, activ
             <XCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-red-800">Registration Not Approved</p>
-              <p className="text-sm text-red-700 mt-1">
-                Unfortunately, your registration was not approved. Please contact Onction for more information.
-              </p>
+              {vendor.rejectionReason ? (
+                <p className="text-sm text-red-700 mt-1">
+                  <span className="font-semibold">Reason:</span> {vendor.rejectionReason}
+                </p>
+              ) : (
+                <p className="text-sm text-red-700 mt-1">
+                  Unfortunately, your registration was not approved. Please contact Onction for more information.
+                </p>
+              )}
             </div>
           </div>
         </div>

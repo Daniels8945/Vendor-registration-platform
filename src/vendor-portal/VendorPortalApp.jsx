@@ -5,6 +5,7 @@ import VendorDashboardView from './views/VendorDashboardView';
 import VendorInvoicesView from './views/VendorInvoicesView';
 import VendorDocumentsView from './views/VendorDocumentsView';
 import VendorNotificationsView from './views/VendorNotificationsView';
+import VendorProfileView from './views/VendorProfileView';
 import { 
   getVendorInvoices, 
   getVendorDocuments, 
@@ -26,23 +27,6 @@ const VendorPortalApp = () => {
   const [activities, setActivities] = useState([]);
   const [toast, setToast] = useState(null);
 
-  useEffect(() => {
-    if (vendor) {
-      loadVendorData();
-    }
-  }, [vendor]);
-
-  useEffect(() => {
-    if (toast) {
-      const timer = setTimeout(() => setToast(null), 3000);
-      return () => clearTimeout(timer);
-    }
-  }, [toast]);
-
-  const showToast = (message, type = 'success') => {
-    setToast({ message, type });
-  };
-
   const loadVendorData = async () => {
     const [invoiceData, documentData, notificationData, activityData] = await Promise.all([
       getVendorInvoices(vendor.id),
@@ -54,6 +38,22 @@ const VendorPortalApp = () => {
     setDocuments(documentData);
     setNotifications(notificationData);
     setActivities(activityData);
+  };
+
+  useEffect(() => {
+    if (!vendor) return;
+    loadVendorData(); // eslint-disable-line react-hooks/set-state-in-effect
+  }, [vendor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = (message, type = 'success') => {
+    setToast({ message, type });
   };
 
   const handleLogin = (vendorData) => {
@@ -115,6 +115,37 @@ const VendorPortalApp = () => {
     }
   };
 
+  const handleMarkNotificationRead = async (notificationId) => {
+    try {
+      const key = `notification:${vendor.id}:${notificationId}`;
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        localStorage.setItem(key, JSON.stringify({ ...JSON.parse(raw), read: true }));
+        await loadVendorData();
+      }
+    } catch { /* ignore */ }
+  };
+
+  const handleMarkAllNotificationsRead = async () => {
+    try {
+      notifications
+        .filter(n => !n.read)
+        .forEach(n => {
+          const key = `notification:${vendor.id}:${n.id}`;
+          const raw = localStorage.getItem(key);
+          if (raw) localStorage.setItem(key, JSON.stringify({ ...JSON.parse(raw), read: true }));
+        });
+      await loadVendorData();
+    } catch { /* ignore */ }
+  };
+
+  const handleDeleteNotification = async (notificationId) => {
+    try {
+      localStorage.removeItem(`notification:${vendor.id}:${notificationId}`);
+      await loadVendorData();
+    } catch { /* ignore */ }
+  };
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const menuItems = [
@@ -157,53 +188,24 @@ const VendorPortalApp = () => {
         );
       case 'profile':
         return (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Vendor Profile</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Company Name</label>
-                <p className="text-gray-900 mt-1">{vendor.companyName}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Vendor Code</label>
-                <p className="text-gray-900 mt-1 font-mono">{vendor.id}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Business Type</label>
-                <p className="text-gray-900 mt-1 capitalize">{vendor.businessType?.replace('-', ' ')}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Email</label>
-                <p className="text-gray-900 mt-1">{vendor.email}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Contact Person</label>
-                <p className="text-gray-900 mt-1">{vendor.firstName} {vendor.lastName}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Phone</label>
-                <p className="text-gray-900 mt-1">{vendor.phone || 'N/A'}</p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Address</label>
-                <p className="text-gray-900 mt-1">
-                  {vendor.streetAddress}
-                  {vendor.streetAddress2 && `, ${vendor.streetAddress2}`}
-                  <br />
-                  {vendor.city}, {vendor.region} {vendor.postalCode}
-                  <br />
-                  {vendor.country}
-                </p>
-              </div>
-              <div>
-                <label className="text-sm font-semibold text-gray-700">Status</label>
-                <p className="text-gray-900 mt-1">{vendor.status}</p>
-              </div>
-            </div>
-          </div>
+          <VendorProfileView
+            vendor={vendor}
+            onVendorUpdated={(updatedVendor) => {
+              setVendor(updatedVendor);
+              showToast('Profile updated successfully', 'success');
+            }}
+            onShowToast={showToast}
+          />
         );
       case 'notifications':
-        return <VendorNotificationsView notifications={notifications} />;
+        return (
+          <VendorNotificationsView
+            notifications={notifications}
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllNotificationsRead}
+            onDelete={handleDeleteNotification}
+          />
+        );
       default:
         return null;
     }
