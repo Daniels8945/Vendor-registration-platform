@@ -1,7 +1,47 @@
 // Utility functions for vendor management
 
-export const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(amount);
+export const getSettings = () => {
+  try {
+    const data = localStorage.getItem('admin:settings');
+    const defaults = {
+      currency: 'NGN',
+      invoicePrefix: 'INV',
+      requireDocumentApproval: true,
+      autoApproveDocuments: false,
+      emailNotifications: true,
+      maxInvoiceAmount: '',
+      companyName: 'Onction',
+      adminPassword: '',
+    };
+    return data ? { ...defaults, ...JSON.parse(data) } : defaults;
+  } catch {
+    return { currency: 'NGN', invoicePrefix: 'INV', requireDocumentApproval: true, autoApproveDocuments: false, emailNotifications: true, maxInvoiceAmount: '', companyName: 'Onction', adminPassword: '' };
+  }
+};
+
+export const formatCurrency = (amount) => {
+  const { currency } = getSettings();
+  const localeMap = { NGN: 'en-NG', USD: 'en-US', GBP: 'en-GB', EUR: 'de-DE' };
+  const locale = localeMap[currency] || 'en-NG';
+  return new Intl.NumberFormat(locale, { style: 'currency', currency: currency || 'NGN' }).format(amount);
+};
+
+export const formatDocumentType = (type) => {
+  if (!type) return '—';
+  return type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+export const exportToCSV = (filename, headers, rows) => {
+  const escape = (val) => `"${String(val ?? '').replace(/"/g, '""')}"`;
+  const csv = [headers.map(escape).join(','), ...rows.map(row => row.map(escape).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 export const logAudit = (action, details = {}) => {
   try {
@@ -18,11 +58,17 @@ export const logAudit = (action, details = {}) => {
   }
 };
 
-export const notifyVendorStatusChange = async (vendorId, newStatus) => {
+export const notifyVendorStatusChange = async (vendorId, newStatus, rejectionReason = '') => {
   try {
+    const { emailNotifications } = getSettings();
+    if (!emailNotifications) return;
+
+    const rejectedMsg = rejectionReason
+      ? `Unfortunately, your vendor application has been rejected. Reason: ${rejectionReason}`
+      : 'Unfortunately, your vendor application has been rejected. Please contact support for more information.';
     const messages = {
       'Approved': { type: 'success', title: 'Application Approved', message: 'Congratulations! Your vendor application has been approved. You can now submit invoices and upload documents.' },
-      'Rejected': { type: 'error', title: 'Application Rejected', message: 'Unfortunately, your vendor application has been rejected. Please contact support for more information.' },
+      'Rejected': { type: 'error', title: 'Application Rejected', message: rejectedMsg },
       'Inactive': { type: 'info', title: 'Account Deactivated', message: 'Your vendor account has been set to inactive. Please contact support if you believe this is an error.' },
       'Pending Review': { type: 'info', title: 'Application Under Review', message: 'Your vendor application has been set back to pending review. An admin will review it shortly.' },
     };
@@ -56,15 +102,16 @@ export const generateVendorCode = (businessType) => {
   }[businessType] || 'OSL';
 
   const year = new Date().getFullYear();
-  const randomLetters = Array.from({ length: 3 }, () => 
+  const randomLetters = Array.from({ length: 3 }, () =>
     String.fromCharCode(65 + Math.floor(Math.random() * 26))
   ).join('');
   const randomNumbers = String(Math.floor(1000 + Math.random() * 9000));
-  
+
   return `${typeCode}-${year}-${randomLetters}-${randomNumbers}`;
 };
 
 export const formatDate = (dateString) => {
+  if (!dateString) return '—';
   const date = new Date(dateString);
   return date.toLocaleString('en-US', {
     year: 'numeric',
@@ -72,7 +119,6 @@ export const formatDate = (dateString) => {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
-    second: '2-digit',
     hour12: false
   }).replace(',', '');
 };
@@ -91,6 +137,7 @@ export const getStats = (vendors) => {
     pending: vendors.filter(v => v.status === 'Pending Review').length,
     approved: vendors.filter(v => v.status === 'Approved').length,
     rejected: vendors.filter(v => v.status === 'Rejected').length,
+    inactive: vendors.filter(v => v.status === 'Inactive').length,
     manufacturers: vendors.filter(v => v.businessType === 'manufacturer').length,
     distributors: vendors.filter(v => v.businessType === 'distributor').length,
     serviceProviders: vendors.filter(v => v.businessType === 'service-provider').length,
@@ -127,10 +174,11 @@ export const loadVendors = async () => {
             }
           })
         );
-        return vendorData.filter(v => v !== null).sort((a, b) => 
+        return vendorData.filter(v => v !== null).sort((a, b) =>
           new Date(b.submittedAt) - new Date(a.submittedAt)
         );
       }
+      return [];
     } else {
       const keys = Object.keys(localStorage).filter(key => key.startsWith('vendor:'));
       const vendorData = keys.map(key => {
@@ -140,7 +188,7 @@ export const loadVendors = async () => {
           return null;
         }
       });
-      return vendorData.filter(v => v !== null).sort((a, b) => 
+      return vendorData.filter(v => v !== null).sort((a, b) =>
         new Date(b.submittedAt) - new Date(a.submittedAt)
       );
     }
@@ -164,9 +212,8 @@ export const deleteVendor = async (vendorId) => {
   }
 };
 
-export const updateVendorStatus = async (vendorId, newStatus) => {
+export const updateVendorStatus = async (vendorId, newStatus, rejectionReason = '') => {
   try {
-    // Get the vendor
     let vendor;
     if (window.storage) {
       const result = await window.storage.get(`vendor:${vendorId}`, false);
@@ -176,15 +223,16 @@ export const updateVendorStatus = async (vendorId, newStatus) => {
       vendor = data ? JSON.parse(data) : null;
     }
 
-    if (!vendor) {
-      return { success: false, error: 'Vendor not found' };
-    }
+    if (!vendor) return { success: false, error: 'Vendor not found' };
 
-    // Update status
     vendor.status = newStatus;
     vendor.statusUpdatedAt = new Date().toISOString();
+    if (newStatus === 'Rejected' && rejectionReason) {
+      vendor.rejectionReason = rejectionReason;
+    } else if (newStatus !== 'Rejected') {
+      delete vendor.rejectionReason;
+    }
 
-    // Save back
     if (window.storage) {
       await window.storage.set(`vendor:${vendorId}`, JSON.stringify(vendor), false);
     } else {
@@ -198,3 +246,55 @@ export const updateVendorStatus = async (vendorId, newStatus) => {
   }
 };
 
+export const updateVendor = async (vendorId, updates) => {
+  try {
+    let vendor;
+    if (window.storage) {
+      const result = await window.storage.get(`vendor:${vendorId}`, false);
+      vendor = result ? JSON.parse(result.value) : null;
+    } else {
+      const data = localStorage.getItem(`vendor:${vendorId}`);
+      vendor = data ? JSON.parse(data) : null;
+    }
+
+    if (!vendor) return { success: false, error: 'Vendor not found' };
+
+    const updated = { ...vendor, ...updates, updatedAt: new Date().toISOString() };
+
+    if (window.storage) {
+      await window.storage.set(`vendor:${vendorId}`, JSON.stringify(updated), false);
+    } else {
+      localStorage.setItem(`vendor:${vendorId}`, JSON.stringify(updated));
+    }
+
+    return { success: true, vendor: updated };
+  } catch (error) {
+    console.error('Error updating vendor:', error);
+    return { success: false, error };
+  }
+};
+
+export const saveVendorNote = async (vendorId, note) => {
+  try {
+    const key = `note:${vendorId}:${Date.now()}`;
+    const entry = { id: key, vendorId, note, createdAt: new Date().toISOString(), createdBy: 'Admin' };
+    localStorage.setItem(key, JSON.stringify(entry));
+    return { success: true, entry };
+  } catch (error) {
+    return { success: false, error };
+  }
+};
+
+export const loadVendorNotes = (vendorId) => {
+  try {
+    const keys = Object.keys(localStorage).filter(k => k.startsWith(`note:${vendorId}:`));
+    return keys
+      .map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
+      .filter(Boolean)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  } catch { return []; }
+};
+
+export const deleteVendorNote = (noteKey) => {
+  localStorage.removeItem(noteKey);
+};

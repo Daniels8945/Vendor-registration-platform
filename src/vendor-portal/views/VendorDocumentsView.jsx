@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Upload, FileText, Check, Clock, X } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Upload, FileText, Check, Clock, X, Download, Eye } from 'lucide-react';
 import { DOCUMENT_TYPES } from '../utils/constants';
 import { formatDate } from '../utils/vendorUtils';
 
@@ -11,17 +11,19 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
     expiryDate: '',
     notes: ''
   });
+  const [fileData, setFileData] = useState(null);
+  const [fileError, setFileError] = useState('');
+  const fileInputRef = useRef(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = await onUploadDocument(formData);
+    if (!fileData) { setFileError('Please select a file to upload.'); return; }
+    const success = await onUploadDocument({ ...formData, ...fileData });
     if (success) {
-      setFormData({
-        documentType: 'Business Registration',
-        documentName: '',
-        expiryDate: '',
-        notes: ''
-      });
+      setFormData({ documentType: 'Business Registration', documentName: '', expiryDate: '', notes: '' });
+      setFileData(null);
+      setFileError('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
       setShowForm(false);
     }
   };
@@ -29,6 +31,18 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    setFileError('');
+    if (!file) { setFileData(null); return; }
+    if (file.size > 5 * 1024 * 1024) { setFileError('File must be under 5MB.'); e.target.value = ''; setFileData(null); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setFileData({ fileContent: ev.target.result, fileName: file.name, fileType: file.type, fileSize: file.size });
+    };
+    reader.readAsDataURL(file);
   };
 
   const getStatusIcon = (status) => {
@@ -131,10 +145,13 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
                 </label>
                 <input
                   type="file"
-                  required
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   accept=".pdf,.jpg,.jpeg,.png"
                 />
+                {fileError && <p className="text-xs text-red-600 mt-1">{fileError}</p>}
+                {fileData && <p className="text-xs text-green-700 mt-1">Selected: {fileData.fileName}</p>}
               </div>
             </div>
 
@@ -199,7 +216,7 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Expiry</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Status</th>
                   <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Reviewed</th>
-                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">Actions</th>
+                  <th className="text-left px-6 py-4 text-sm font-bold text-gray-700">File</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
@@ -237,6 +254,22 @@ const VendorDocumentsView = ({ documents, onUploadDocument }) => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {doc.reviewedAt ? formatDate(doc.reviewedAt) : '—'}
+                    </td>
+                    <td className="px-6 py-4">
+                      {doc.fileContent ? (
+                        <div className="flex items-center gap-1">
+                          {doc.fileType?.startsWith('image/') || doc.fileType === 'application/pdf' ? (
+                            <a href={doc.fileContent} target="_blank" rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 p-1.5 rounded transition-colors" title="View file">
+                              <Eye size={16} />
+                            </a>
+                          ) : null}
+                          <a href={doc.fileContent} download={doc.fileName || doc.documentName}
+                            className="text-gray-600 hover:text-gray-900 p-1.5 rounded transition-colors" title="Download file">
+                            <Download size={16} />
+                          </a>
+                        </div>
+                      ) : <span className="text-gray-300 text-xs">—</span>}
                     </td>
                   </tr>
                 ))}

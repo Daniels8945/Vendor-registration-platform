@@ -1,10 +1,14 @@
 @import "tailwindcss";
 
+/* Prevent browser-level scroll — the app shell manages its own scroll regions */
 html,
-body,
-#root {
+body {
   height: 100%;
   overflow: hidden;
+}
+
+#root {
+  height: 100%;
 }
 
 /* Tighter base for a premium, data-dense UI */
@@ -12,22 +16,17 @@ html {
   font-size: 14px;
 }
 
-/* Restore overflow-y-auto inside the app shell */
-#root {
-  overflow: visible;
-}
-
-/* Custom scrollbar — slim & subtle */
+/* Slim, subtle custom scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: #d1d5db;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #9ca3af;

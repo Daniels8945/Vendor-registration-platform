@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Eye, Check, X, Download, FileText, Upload, RotateCcw } from 'lucide-react';
-import { formatDate } from '../utils/vendorUtils';
+import { Search, Filter, Eye, Check, X, FileText, Upload, RotateCcw, Download } from 'lucide-react';
+import { formatDate, formatDocumentType, exportToCSV } from '../utils/vendorUtils';
 import { DOC_STATUS_COLORS } from '../utils/constants';
+import { FileDown } from 'lucide-react';
 
 const AdminDocumentsView = ({ onShowToast }) => {
   const [documents, setDocuments] = useState([]);
@@ -13,16 +14,8 @@ const AdminDocumentsView = ({ onShowToast }) => {
   const [viewingDocument, setViewingDocument] = useState(null);
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectionReason, setRejectionReason] = useState('');
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    await Promise.all([loadAllDocuments(), loadVendors()]);
-    setLoading(false);
-  };
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const loadAllDocuments = async () => {
     try {
@@ -93,6 +86,15 @@ const AdminDocumentsView = ({ onShowToast }) => {
       console.error('Error loading vendors:', error);
     }
   };
+
+  useEffect(() => {
+    const run = async () => {
+      setLoading(true);
+      await Promise.all([loadAllDocuments(), loadVendors()]);
+      setLoading(false);
+    };
+    run();
+  }, []);
 
   const getVendorName = (vendorCode) => {
     const vendor = vendors.find(v => v.id === vendorCode);
@@ -198,7 +200,7 @@ const AdminDocumentsView = ({ onShowToast }) => {
 
   const createNotification = async (vendorCode, notificationData) => {
     try {
-      const notificationId = `NOT-${Date.now()}`;
+      const notificationId = `NOT-${new Date().getTime()}`;
       const notification = {
         id: notificationId,
         vendorCode,
@@ -228,17 +230,28 @@ const AdminDocumentsView = ({ onShowToast }) => {
     );
   };
 
+  const handleExportCSV = () => {
+    exportToCSV(
+      `documents-${new Date().toISOString().split('T')[0]}.csv`,
+      ['Document Name', 'Type', 'Vendor', 'Vendor Code', 'Uploaded', 'Status', 'Rejection Reason'],
+      filteredDocuments.map(d => [
+        d.documentName, formatDocumentType(d.documentType), getVendorName(d.vendorCode),
+        d.vendorCode, formatDate(d.uploadedAt), d.status, d.rejectionReason || '',
+      ])
+    );
+  };
+
   const filteredDocuments = documents.filter(document => {
-    const matchesSearch = 
+    const matchesSearch =
       document.documentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       document.documentType.toLowerCase().includes(searchTerm.toLowerCase()) ||
       document.vendorCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
       getVendorName(document.vendorCode).toLowerCase().includes(searchTerm.toLowerCase());
-    
     const matchesStatus = statusFilter === 'all' || document.status === statusFilter;
     const matchesVendor = vendorFilter === 'all' || document.vendorCode === vendorFilter;
-    
-    return matchesSearch && matchesStatus && matchesVendor;
+    const matchesFrom = !dateFrom || new Date(document.uploadedAt) >= new Date(dateFrom);
+    const matchesTo = !dateTo || new Date(document.uploadedAt) <= new Date(dateTo + 'T23:59:59');
+    return matchesSearch && matchesStatus && matchesVendor && matchesFrom && matchesTo;
   });
 
   const stats = {
@@ -251,9 +264,15 @@ const AdminDocumentsView = ({ onShowToast }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900">Document Management</h1>
-        <p className="text-gray-600 mt-1">Review and approve vendor documents</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900">Document Management</h1>
+          <p className="text-gray-600 mt-1">Review and approve vendor documents</p>
+        </div>
+        <button onClick={handleExportCSV}
+          className="flex items-center gap-2 text-sm bg-white border border-gray-200 hover:border-gray-300 text-gray-700 px-4 py-2 rounded-lg shadow-sm transition-colors">
+          <FileDown size={16} /> Export CSV
+        </button>
       </div>
 
       {/* Stats Cards */}
@@ -334,21 +353,23 @@ const AdminDocumentsView = ({ onShowToast }) => {
                 <option value="Rejected">Rejected</option>
               </select>
             </div>
-            <div className="relative min-w-50">
-              <select
-                value={vendorFilter}
-                onChange={(e) => setVendorFilter(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 appearance-none bg-white"
-              >
-                <option value="all">All Vendors</option>
-                {vendors.map(vendor => (
-                  <option key={vendor.id} value={vendor.id}>
-                    {vendor.companyName} ({vendor.id})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select value={vendorFilter} onChange={e => setVendorFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-sm">
+              <option value="all">All Vendors</option>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.companyName}</option>)}
+            </select>
           </div>
+        </div>
+        <div className="flex items-center gap-2 text-sm text-gray-600">
+          <span className="font-medium">Date range:</span>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          <span>to</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="px-3 py-1.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(''); setDateTo(''); }} className="text-blue-600 hover:text-blue-800 text-xs underline">Clear</button>
+          )}
         </div>
       </div>
 
@@ -387,7 +408,7 @@ const AdminDocumentsView = ({ onShowToast }) => {
                     </td>
                     <td className="px-6 py-4">
                       <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 capitalize">
-                        {document.documentType.replace('_', ' ')}
+                        {formatDocumentType(document.documentType)}
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -409,6 +430,12 @@ const AdminDocumentsView = ({ onShowToast }) => {
                         >
                           <Eye size={18} />
                         </button>
+                        {document.fileContent && (
+                          <a href={document.fileContent} download={document.fileName || document.documentName}
+                            className="text-gray-600 hover:text-gray-900 p-2 rounded transition-colors" title="Download file">
+                            <Download size={18} />
+                          </a>
+                        )}
                         
                         {document.status === 'Pending Review' && (
                           <>
@@ -471,7 +498,7 @@ const AdminDocumentsView = ({ onShowToast }) => {
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-600 mb-1">Document Type</p>
-                  <p className="text-gray-900 capitalize">{viewingDocument.documentType.replace('_', ' ')}</p>
+                  <p className="text-gray-900 capitalize">{formatDocumentType(viewingDocument.documentType)}</p>
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-600 mb-1">Status</p>
@@ -487,6 +514,33 @@ const AdminDocumentsView = ({ onShowToast }) => {
                 <div>
                   <p className="text-sm font-semibold text-gray-600 mb-1">Description</p>
                   <p className="text-gray-900 whitespace-pre-wrap">{viewingDocument.description}</p>
+                </div>
+              )}
+
+              {viewingDocument.fileContent && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <div className="bg-gray-50 px-4 py-2 flex items-center justify-between border-b border-gray-200">
+                    <p className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                      <FileText size={15} /> {viewingDocument.fileName || viewingDocument.documentName}
+                    </p>
+                    <a href={viewingDocument.fileContent} download={viewingDocument.fileName || viewingDocument.documentName}
+                      className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                      <Download size={13} /> Download
+                    </a>
+                  </div>
+                  {viewingDocument.fileType?.startsWith('image/') ? (
+                    <img src={viewingDocument.fileContent} alt={viewingDocument.documentName}
+                      className="w-full max-h-64 object-contain bg-white p-2" />
+                  ) : viewingDocument.fileType === 'application/pdf' ? (
+                    <iframe src={viewingDocument.fileContent} title={viewingDocument.documentName}
+                      className="w-full h-64 border-0" />
+                  ) : (
+                    <div className="p-4 text-center text-sm text-gray-500">
+                      Preview not available.{' '}
+                      <a href={viewingDocument.fileContent} download={viewingDocument.fileName || viewingDocument.documentName}
+                        className="text-blue-600 hover:underline">Download file</a>
+                    </div>
+                  )}
                 </div>
               )}
 

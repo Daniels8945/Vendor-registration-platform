@@ -97,14 +97,15 @@ export const submitInvoice = async (vendorCode, invoiceData) => {
   }
 };
 
-// Get next invoice number (auto-increment)
+// Get next invoice number (vendor-scoped, e.g. OSL-2024-ABC-1234/001)
 export const getNextInvoiceNumber = async (vendorCode) => {
   try {
     const invoices = await getVendorInvoices(vendorCode);
     const count = invoices.length;
-    return String(count + 1).padStart(3, '0'); // 001, 002, 003...
+    const seq = String(count + 1).padStart(3, '0');
+    return `${vendorCode}/${seq}`;
   } catch (error) {
-    return '001';
+    return `${vendorCode}/001`;
   }
 };
 

@@ -32,7 +32,8 @@ const ServicesView = () => {
   const [toast, setToast] = useState(null);
 
   useEffect(() => {
-    setServices(loadServices());
+    const data = loadServices();
+    setTimeout(() => setServices(data), 0);
   }, []);
 
   useEffect(() => {

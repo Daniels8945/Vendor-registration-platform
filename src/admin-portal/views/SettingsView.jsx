@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, User, Bell, Shield, Building2, Plus, Trash2 } from 'lucide-react';
+import { Settings, Save, User, Bell, Shield, Building2, Plus, Trash2, Lock, Eye, EyeOff } from 'lucide-react';
 
 const SETTING_KEY = 'admin:settings';
 
@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   requireDocumentApproval: true,
   maxInvoiceAmount: '',
   currency: 'NGN',
+  adminPassword: '',
 };
 
 const ADMIN_USERS_KEY = 'admin:users';
@@ -34,13 +35,16 @@ const loadAdminUsers = () => {
 
 const saveAdminUsers = (users) => localStorage.setItem(ADMIN_USERS_KEY, JSON.stringify(users));
 
-const SettingsView = () => {
+const SettingsView = ({ onAuthChange }) => {
   const [activeTab, setActiveTab] = useState('general');
   const [settings, setSettings] = useState(loadSettings());
   const [adminUsers, setAdminUsers] = useState(loadAdminUsers());
   const [toast, setToast] = useState(null);
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'Admin' });
   const [showAddUser, setShowAddUser] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPwd, setShowPwd] = useState(false);
 
   useEffect(() => {
     if (toast) {
@@ -58,7 +62,22 @@ const SettingsView = () => {
 
   const saveSettings = () => {
     localStorage.setItem(SETTING_KEY, JSON.stringify(settings));
+    if (onAuthChange) onAuthChange();
     showToast('Settings saved successfully');
+  };
+
+  const savePassword = () => {
+    if (newPassword && newPassword !== confirmPassword) {
+      showToast('Passwords do not match', 'error');
+      return;
+    }
+    const updated = { ...settings, adminPassword: newPassword };
+    localStorage.setItem(SETTING_KEY, JSON.stringify(updated));
+    setSettings(updated);
+    setNewPassword('');
+    setConfirmPassword('');
+    if (onAuthChange) onAuthChange();
+    showToast(newPassword ? 'Admin password updated' : 'Admin password removed');
   };
 
   const addUser = (e) => {
@@ -85,6 +104,7 @@ const SettingsView = () => {
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'workflow', label: 'Workflow', icon: Shield },
     { id: 'users', label: 'Admin Users', icon: User },
+    { id: 'security', label: 'Security', icon: Lock },
   ];
 
   return (
@@ -100,7 +120,7 @@ const SettingsView = () => {
           <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
           <p className="text-gray-600 mt-1">Configure system preferences</p>
         </div>
-        {activeTab !== 'users' && (
+        {activeTab !== 'users' && activeTab !== 'security' && (
           <button onClick={saveSettings}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
             <Save size={18} />
@@ -198,6 +218,46 @@ const SettingsView = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Security */}
+      {activeTab === 'security' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-5">
+          <h2 className="text-lg font-bold text-gray-900">Admin Portal Password</h2>
+          <p className="text-sm text-gray-500">Set a password to restrict access to the admin portal. Leave blank to disable the login gate.</p>
+          <div className="space-y-3 max-w-sm">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">New Password</label>
+              <div className="relative">
+                <input type={showPwd ? 'text' : 'password'} value={newPassword}
+                  onChange={e => setNewPassword(e.target.value)} placeholder="Enter new password"
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+                <button type="button" onClick={() => setShowPwd(s => !s)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Confirm Password</label>
+              <input type={showPwd ? 'text' : 'password'} value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)} placeholder="Confirm new password"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm" />
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button onClick={savePassword}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-semibold text-sm transition-colors">
+                {newPassword ? 'Save Password' : 'Remove Password'}
+              </button>
+            </div>
+            {settings.adminPassword && (
+              <p className="text-xs text-green-600 font-medium">Password protection is currently active.</p>
+            )}
+            {!settings.adminPassword && (
+              <p className="text-xs text-gray-400">No password set — portal is accessible without login.</p>
+            )}
+          </div>
         </div>
       )}
 

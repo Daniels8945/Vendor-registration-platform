@@ -1,4 +1,4 @@
-import { LayoutDashboard, Users, UserPlus, FileText, Upload, Package, Settings, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, FileText, Upload, Package, Settings, ClipboardList, Bell } from 'lucide-react';
 
 export const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -7,6 +7,7 @@ export const MENU_ITEMS = [
   { id: 'invoices', label: 'Invoices', icon: FileText },
   { id: 'documents', label: 'Documents', icon: Upload },
   { id: 'services', label: 'Services', icon: Package },
+  { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'audit-log', label: 'Audit Log', icon: ClipboardList },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];

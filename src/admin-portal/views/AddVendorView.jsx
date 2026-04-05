@@ -1,7 +1,13 @@
 import React from 'react';
 import { COUNTRIES } from '../utils/constants';
+import { AlertCircle } from 'lucide-react';
 
-const AddVendorView = ({ formData, onChange, onSubmit, onCancel }) => {
+const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] }) => {
+  // Live duplicate check
+  const duplicateName = formData.companyName.trim().length > 2 &&
+    vendors.find(v => v.companyName.trim().toLowerCase() === formData.companyName.trim().toLowerCase());
+  const duplicateEmail = formData.email.trim().length > 4 &&
+    vendors.find(v => v.email.trim().toLowerCase() === formData.email.trim().toLowerCase());
   return (
     <div className="space-y-6">
       <div>
@@ -21,8 +27,13 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel }) => {
             required
             value={formData.companyName}
             onChange={onChange}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${duplicateName ? 'border-orange-400' : 'border-gray-200'}`}
           />
+          {duplicateName && (
+            <p className="flex items-center gap-1 text-sm text-orange-600 mt-1">
+              <AlertCircle size={14} /> A vendor with this name already exists ({duplicateName.id}).
+            </p>
+          )}
         </div>
 
         {/* Business Type */}
@@ -213,8 +224,13 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel }) => {
             required
             value={formData.email}
             onChange={onChange}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={`w-full px-4 py-3 bg-gray-50 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${duplicateEmail ? 'border-orange-400' : 'border-gray-200'}`}
           />
+          {duplicateEmail && (
+            <p className="flex items-center gap-1 text-sm text-orange-600 mt-1">
+              <AlertCircle size={14} /> A vendor with this email already exists ({duplicateEmail.id}).
+            </p>
+          )}
         </div>
 
         {/* Contact Phone */}
