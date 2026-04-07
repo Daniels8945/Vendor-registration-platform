@@ -161,6 +161,13 @@ const VendorPortalApp = () => {
     }
   }, [isAuthenticated, loadData]);
 
+  // Poll every 30 s to pick up status changes and new notifications
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const id = setInterval(() => { loadData(); }, 30_000);
+    return () => clearInterval(id);
+  }, [isAuthenticated, loadData]);
+
   useEffect(() => {
     if (toast) {
       const timer = setTimeout(() => setToast(null), 3000);

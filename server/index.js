@@ -2,9 +2,11 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
+import swaggerUi from 'swagger-ui-express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { logger } from './logger.js';
+import { swaggerSpec } from './swagger.js';
 
 import './database.js'; // runs schema migrations on import
 
@@ -30,6 +32,12 @@ app.use(cors({ origin: (origin, cb) => cb(null, true), credentials: true }));
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
+
+// ── Swagger UI ───────────────────────────────────────────────────────────────
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  customSiteTitle: 'Vendor Platform API Docs',
+  swaggerOptions: { persistAuthorization: true },
+}));
 
 // ── Static: serve uploaded files ────────────────────────────────────────────
 app.use('/api/uploads', express.static(UPLOADS_DIR));

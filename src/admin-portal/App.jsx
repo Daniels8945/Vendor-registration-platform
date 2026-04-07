@@ -189,9 +189,12 @@ const App = () => {
     setVendorToDelete(null);
   };
 
-  const handleVendorUpdated = async () => {
+  const handleVendorUpdated = async (updatedVendor) => {
     await fetchVendors();
-    showToast('Vendor updated successfully', 'success');
+    const msg = updatedVendor?.status
+      ? `Vendor status changed to ${updatedVendor.status}`
+      : 'Vendor updated successfully';
+    showToast(msg, 'success');
   };
 
   // ── Global search ─────────────────────────────────────────────────────────

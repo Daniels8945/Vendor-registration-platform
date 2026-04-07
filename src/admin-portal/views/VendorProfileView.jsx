@@ -8,7 +8,7 @@ import {
 import {
   getBusinessTypeLabel, formatDate, formatCurrency, formatDocumentType,
   updateVendor, saveVendorNote, loadVendorNotes, deleteVendorNote, logAudit,
-  updateVendorStatus, notifyVendorStatusChange
+  updateVendorStatus
 } from '../utils/vendorUtils';
 import { STATUS_COLORS, INVOICE_STATUS_COLORS, DOC_STATUS_COLORS, COUNTRIES, VENDOR_STATUSES } from '../utils/constants';
 
@@ -213,12 +213,14 @@ const VendorProfileView = ({ vendor, onBack, onVendorUpdated }) => {
 
   const handleStatusChange = async (newStatus, reason = '') => {
     setStatusChanging(true);
-    const result = await updateVendorStatus(vendor.id, newStatus, reason);
-    setStatusChanging(false);
-    if (result.success) {
+    try {
+      const updatedVendor = await updateVendorStatus(vendor.id, newStatus, reason);
       logAudit('vendor_status_changed', { vendorId: vendor.id, newStatus });
-      await notifyVendorStatusChange(vendor.id, newStatus, reason);
-      if (onVendorUpdated) onVendorUpdated(result.vendor);
+      if (onVendorUpdated) onVendorUpdated(updatedVendor);
+    } catch {
+      // error is surfaced by the parent toast
+    } finally {
+      setStatusChanging(false);
     }
   };
 
