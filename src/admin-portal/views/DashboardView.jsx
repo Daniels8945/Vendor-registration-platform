@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Bell, Package, XCircle, AlertTriangle, FileText, Upload, TrendingUp, Calendar, DollarSign, Clock } from 'lucide-react';
 import { getStats, formatDate, getBusinessTypeLabel, formatCurrency } from '../utils/vendorUtils';
+import { getInvoices, getDocuments } from '../../lib/api.js';
 
 const getPeriodStart = (period) => {
   const now = new Date();
@@ -22,32 +23,32 @@ const DashboardView = ({ vendors, onViewProfile, onNavigate }) => {
   const [financials, setFinancials] = useState({ totalInvoiced: 0, totalPaid: 0, pendingAmount: 0, overdueAmount: 0, overdueCount: 0 });
 
   useEffect(() => {
-    const load = () => {
-      const invoiceKeys = Object.keys(localStorage).filter(k => k.startsWith('invoice:'));
-      const allInvoices = invoiceKeys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }).filter(Boolean);
-      const docKeys = Object.keys(localStorage).filter(k => k.startsWith('document:'));
-      const allDocs = docKeys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }).filter(Boolean);
-      return { invoices: allInvoices, docs: allDocs };
+    const load = async () => {
+      try {
+        const [allInvoices, allDocs] = await Promise.all([
+          getInvoices().catch(() => []),
+          getDocuments().catch(() => []),
+        ]);
+        // Always show pending counts from all-time data (for action alerts)
+        setPendingInvoices(allInvoices.filter(i => ['Submitted', 'Pending Approval', 'Under Review'].includes(i.status)).slice(0, 5));
+        setPendingDocs(allDocs.filter(d => d.status === 'Pending Review').slice(0, 5));
+        // Apply period filter to financial metrics
+        const periodFiltered = periodStart
+          ? allInvoices.filter(i => new Date(i.submittedAt) >= periodStart)
+          : allInvoices;
+        const now = new Date();
+        const active = periodFiltered.filter(i => i.status !== 'Rejected');
+        const overdue = periodFiltered.filter(i => !['Paid', 'Rejected'].includes(i.status) && i.dueDate && new Date(i.dueDate) < now);
+        setFinancials({
+          totalInvoiced: active.reduce((s, i) => s + Number(i.amount || 0), 0),
+          totalPaid: periodFiltered.filter(i => i.status === 'Paid').reduce((s, i) => s + Number(i.amount || 0), 0),
+          pendingAmount: periodFiltered.filter(i => ['Submitted', 'Pending Approval', 'Under Review', 'Approved'].includes(i.status)).reduce((s, i) => s + Number(i.amount || 0), 0),
+          overdueAmount: overdue.reduce((s, i) => s + Number(i.amount || 0), 0),
+          overdueCount: overdue.length,
+        });
+      } catch { /* ignore */ }
     };
-    Promise.resolve(load()).then(({ invoices, docs }) => {
-      // Always show pending counts from all-time data (for action alerts)
-      setPendingInvoices(invoices.filter(i => ['Submitted', 'Pending Approval', 'Under Review'].includes(i.status)).slice(0, 5));
-      setPendingDocs(docs.filter(d => d.status === 'Pending Review').slice(0, 5));
-      // Apply period filter to financial metrics
-      const periodFiltered = periodStart
-        ? invoices.filter(i => new Date(i.submittedAt) >= periodStart)
-        : invoices;
-      const now = new Date();
-      const active = periodFiltered.filter(i => i.status !== 'Rejected');
-      const overdue = periodFiltered.filter(i => !['Paid', 'Rejected'].includes(i.status) && i.dueDate && new Date(i.dueDate) < now);
-      setFinancials({
-        totalInvoiced: active.reduce((s, i) => s + Number(i.amount || 0), 0),
-        totalPaid: periodFiltered.filter(i => i.status === 'Paid').reduce((s, i) => s + Number(i.amount || 0), 0),
-        pendingAmount: periodFiltered.filter(i => ['Submitted', 'Pending Approval', 'Under Review', 'Approved'].includes(i.status)).reduce((s, i) => s + Number(i.amount || 0), 0),
-        overdueAmount: overdue.reduce((s, i) => s + Number(i.amount || 0), 0),
-        overdueCount: overdue.length,
-      });
-    });
+    load();
   }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statCards = [

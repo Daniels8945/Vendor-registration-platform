@@ -70,9 +70,16 @@ router.post('/vendor/login', (req, res) => {
 
   if (vendor.status === 'Rejected') {
     return res.status(403).json({
-      error: 'Account not approved',
+      error: 'Your vendor application has been rejected.',
       status: vendor.status,
       rejectionReason: vendor.rejection_reason || null,
+    });
+  }
+
+  if (vendor.status === 'Inactive') {
+    return res.status(403).json({
+      error: 'Your vendor account has been deactivated. Please contact support.',
+      status: vendor.status,
     });
   }
 

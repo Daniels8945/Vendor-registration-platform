@@ -10,6 +10,7 @@ import {
   updateVendor, saveVendorNote, loadVendorNotes, deleteVendorNote, logAudit,
   updateVendorStatus
 } from '../utils/vendorUtils';
+import { getInvoices, getDocuments, getAuditLog } from '../../lib/api.js';
 import { STATUS_COLORS, INVOICE_STATUS_COLORS, DOC_STATUS_COLORS, COUNTRIES, VENDOR_STATUSES } from '../utils/constants';
 
 const VendorProfileView = ({ vendor, onBack, onVendorUpdated }) => {
@@ -33,50 +34,25 @@ const VendorProfileView = ({ vendor, onBack, onVendorUpdated }) => {
     const load = async () => {
       setLoading(true);
       const prefix = vendor.id;
-
-      // Invoices
       try {
-        if (window.storage) {
-          const r = await window.storage.list(`invoice:${prefix}:`, false);
-          if (r?.keys) {
-            const data = await Promise.all(r.keys.map(async k => {
-              try { const d = await window.storage.get(k, false); return d ? JSON.parse(d.value) : null; } catch { return null; }
-            }));
-            setInvoices(data.filter(Boolean).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)));
-          }
-        } else {
-          const keys = Object.keys(localStorage).filter(k => k.startsWith(`invoice:${prefix}:`));
-          setInvoices(keys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-            .filter(Boolean).sort((a, b) => new Date(b.submittedAt) - new Date(a.submittedAt)));
-        }
-      } catch { setInvoices([]); }
-
-      // Documents
-      try {
-        if (window.storage) {
-          const r = await window.storage.list(`document:${prefix}:`, false);
-          if (r?.keys) {
-            const data = await Promise.all(r.keys.map(async k => {
-              try { const d = await window.storage.get(k, false); return d ? JSON.parse(d.value) : null; } catch { return null; }
-            }));
-            setDocuments(data.filter(Boolean).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
-          }
-        } else {
-          const keys = Object.keys(localStorage).filter(k => k.startsWith(`document:${prefix}:`));
-          setDocuments(keys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-            .filter(Boolean).sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)));
-        }
-      } catch { setDocuments([]); }
-
-      // Notes
-      setNotes(loadVendorNotes(prefix));
-
-      // Activity from audit log
-      const auditKeys = Object.keys(localStorage).filter(k => k.startsWith('audit:'));
-      const allAudit = auditKeys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }).filter(Boolean);
-      setAuditEntries(allAudit.filter(e => e.details?.vendorId === prefix || e.details?.vendorCode === prefix)
-        .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 20));
-
+        const [invData, docData, notesData, auditData] = await Promise.all([
+          getInvoices({ vendorCode: prefix }).catch(() => []),
+          getDocuments({ vendorCode: prefix }).catch(() => []),
+          loadVendorNotes(prefix),
+          getAuditLog({ search: prefix }).catch(() => []),
+        ]);
+        setInvoices(invData);
+        setDocuments(docData);
+        setNotes(notesData);
+        setAuditEntries(
+          auditData
+            .filter(e => {
+              const d = e.details || {};
+              return d.vendorId === prefix || d.vendorCode === prefix;
+            })
+            .slice(0, 20)
+        );
+      } catch { /* ignore */ }
       setLoading(false);
     };
     load();
@@ -184,23 +160,27 @@ const VendorProfileView = ({ vendor, onBack, onVendorUpdated }) => {
 
   const handleEditSave = async () => {
     setSaving(true);
-    const result = await updateVendor(vendor.id, editData);
-    setSaving(false);
-    if (result.success) {
+    try {
+      const updatedVendor = await updateVendor(vendor.id, editData);
       logAudit('vendor_updated', { vendorId: vendor.id, companyName: editData.companyName || vendor.companyName });
       setEditMode(false);
-      if (onVendorUpdated) onVendorUpdated(result.vendor);
+      if (onVendorUpdated) onVendorUpdated(updatedVendor);
+    } catch { /* error surfaced by parent */ } finally {
+      setSaving(false);
     }
   };
 
   const handleAddNote = async () => {
     if (!newNote.trim()) return;
     setSavingNote(true);
-    const result = await saveVendorNote(vendor.id, newNote.trim());
-    setSavingNote(false);
-    if (result.success) {
-      setNotes(prev => [result.entry, ...prev]);
-      setNewNote('');
+    try {
+      const result = await saveVendorNote(vendor.id, newNote.trim());
+      if (result.success) {
+        setNotes(prev => [result.entry, ...prev]);
+        setNewNote('');
+      }
+    } finally {
+      setSavingNote(false);
     }
   };
 

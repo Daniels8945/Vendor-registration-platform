@@ -120,7 +120,9 @@ export const saveVendorNote = async (vendorId, note) => {
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify({ note }),
   });
-  return res.ok ? { success: true } : { success: false };
+  if (!res.ok) return { success: false };
+  const entry = await res.json();
+  return { success: true, entry };
 };
 export const loadVendorNotes = async (vendorId) => {
   const token = getAdminToken();
@@ -131,7 +133,7 @@ export const loadVendorNotes = async (vendorId) => {
 };
 export const deleteVendorNote = async (noteId) => {
   const token = getAdminToken();
-  await fetch(`/api/vendor-notes/${noteId}`, {
+  await fetch(`/api/vendors/notes/${noteId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });

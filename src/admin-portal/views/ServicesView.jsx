@@ -1,25 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Package, Plus, Search, Edit, Trash2, X, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Package, Plus, Search, Edit, Trash2, Check } from 'lucide-react';
 import { formatCurrency } from '../utils/vendorUtils';
+import { getServices, createService, updateService, deleteService } from '../../lib/api.js';
 
 const SERVICE_CATEGORIES = ['IT & Software', 'Logistics', 'Manufacturing', 'Consulting', 'Maintenance', 'Supply', 'Other'];
-
-const loadServices = () => {
-  try {
-    const keys = Object.keys(localStorage).filter(k => k.startsWith('service:'));
-    return keys.map(k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } })
-      .filter(Boolean)
-      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  } catch { return []; }
-};
-
-const saveService = (service) => {
-  localStorage.setItem(`service:${service.id}`, JSON.stringify(service));
-};
-
-const deleteService = (id) => {
-  localStorage.removeItem(`service:${id}`);
-};
 
 const EMPTY_FORM = { name: '', category: 'IT & Software', description: '', unitPrice: '', unit: '', active: true };
 
@@ -31,11 +15,16 @@ const ServicesView = () => {
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [toast, setToast] = useState(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const data = loadServices();
-    setTimeout(() => setServices(data), 0);
+  const reload = useCallback(async () => {
+    try {
+      const data = await getServices();
+      setServices(Array.isArray(data) ? data : []);
+    } catch { setServices([]); }
   }, []);
+
+  useEffect(() => { reload(); }, [reload]);
 
   useEffect(() => {
     if (toast) {
@@ -51,26 +40,26 @@ const ServicesView = () => {
     setFormData(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (editingService) {
-      const updated = { ...editingService, ...formData, updatedAt: new Date().toISOString() };
-      saveService(updated);
-      setServices(loadServices());
-      showToast('Service updated successfully');
-    } else {
-      const newService = {
-        id: `SVC-${Date.now()}`,
-        ...formData,
-        createdAt: new Date().toISOString(),
-      };
-      saveService(newService);
-      setServices(loadServices());
-      showToast('Service created successfully');
+    setSaving(true);
+    try {
+      if (editingService) {
+        await updateService(editingService.id, formData);
+        showToast('Service updated successfully');
+      } else {
+        await createService(formData);
+        showToast('Service created successfully');
+      }
+      await reload();
+      setFormData(EMPTY_FORM);
+      setEditingService(null);
+      setShowForm(false);
+    } catch {
+      showToast('Failed to save service', 'error');
+    } finally {
+      setSaving(false);
     }
-    setFormData(EMPTY_FORM);
-    setEditingService(null);
-    setShowForm(false);
   };
 
   const handleEdit = (service) => {
@@ -78,26 +67,33 @@ const ServicesView = () => {
     setFormData({
       name: service.name,
       category: service.category,
-      description: service.description,
-      unitPrice: service.unitPrice,
-      unit: service.unit,
-      active: service.active,
+      description: service.description || '',
+      unitPrice: service.unitPrice || '',
+      unit: service.unit || '',
+      active: service.active !== false,
     });
     setShowForm(true);
   };
 
-  const handleDelete = () => {
-    deleteService(deleteConfirm.id);
-    setServices(loadServices());
-    setDeleteConfirm(null);
-    showToast('Service deleted');
+  const handleDelete = async () => {
+    try {
+      await deleteService(deleteConfirm.id);
+      await reload();
+      setDeleteConfirm(null);
+      showToast('Service deleted');
+    } catch {
+      showToast('Failed to delete service', 'error');
+    }
   };
 
-  const toggleActive = (service) => {
-    const updated = { ...service, active: !service.active, updatedAt: new Date().toISOString() };
-    saveService(updated);
-    setServices(loadServices());
-    showToast(`Service ${updated.active ? 'activated' : 'deactivated'}`);
+  const toggleActive = async (service) => {
+    try {
+      await updateService(service.id, { ...service, active: !service.active });
+      await reload();
+      showToast(`Service ${!service.active ? 'activated' : 'deactivated'}`);
+    } catch {
+      showToast('Failed to update service', 'error');
+    }
   };
 
   const filtered = services.filter(s =>
@@ -134,8 +130,8 @@ const ServicesView = () => {
       <div className="grid grid-cols-3 gap-4">
         {[
           { label: 'Total Services', value: services.length, color: 'blue' },
-          { label: 'Active', value: services.filter(s => s.active).length, color: 'green' },
-          { label: 'Inactive', value: services.filter(s => !s.active).length, color: 'gray' },
+          { label: 'Active', value: services.filter(s => s.active !== false).length, color: 'green' },
+          { label: 'Inactive', value: services.filter(s => s.active === false).length, color: 'gray' },
         ].map(({ label, value, color }) => (
           <div key={label} className="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
             <p className="text-sm font-medium text-gray-600">{label}</p>
@@ -199,8 +195,9 @@ const ServicesView = () => {
               <label htmlFor="active" className="text-sm font-medium text-gray-700">Active (visible to vendors)</label>
             </div>
             <div className="flex gap-3">
-              <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
-                {editingService ? 'Update Service' : 'Create Service'}
+              <button type="submit" disabled={saving}
+                className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+                {saving ? 'Saving…' : editingService ? 'Update Service' : 'Create Service'}
               </button>
               <button type="button" onClick={() => { setShowForm(false); setEditingService(null); setFormData(EMPTY_FORM); }}
                 className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-6 py-2 rounded-lg font-semibold transition-colors">
@@ -259,8 +256,8 @@ const ServicesView = () => {
                     </td>
                     <td className="px-6 py-4">
                       <button onClick={() => toggleActive(service)}
-                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${service.active ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
-                        {service.active ? <><Check size={12} /> Active</> : 'Inactive'}
+                        className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${service.active !== false ? 'bg-green-100 text-green-800 hover:bg-green-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                        {service.active !== false ? <><Check size={12} /> Active</> : 'Inactive'}
                       </button>
                     </td>
                     <td className="px-6 py-4">

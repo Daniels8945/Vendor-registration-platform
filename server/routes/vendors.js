@@ -271,4 +271,36 @@ function getSettings() {
   return Object.fromEntries(rows.map(r => [r.key, r.value]));
 }
 
+// ── Vendor Notes ─────────────────────────────────────────────────────────────
+
+router.get('/:id/notes', requireAdmin, (req, res) => {
+  const notes = db.prepare(
+    'SELECT id, note, created_by AS createdBy, created_at AS createdAt FROM vendor_notes WHERE vendor_id = ? ORDER BY created_at DESC'
+  ).all(req.params.id);
+  res.json(notes);
+});
+
+router.post('/:id/notes', requireAdmin, (req, res) => {
+  const { note } = req.body;
+  if (!note?.trim()) return res.status(400).json({ error: 'Note is required' });
+  const entry = {
+    id: `NOTE-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    vendor_id: req.params.id,
+    note: note.trim(),
+    created_by: req.admin?.username || 'Admin',
+  };
+  db.prepare(
+    'INSERT INTO vendor_notes (id, vendor_id, note, created_by) VALUES (?, ?, ?, ?)'
+  ).run(entry.id, entry.vendor_id, entry.note, entry.created_by);
+  const saved = db.prepare(
+    'SELECT id, note, created_by AS createdBy, created_at AS createdAt FROM vendor_notes WHERE id = ?'
+  ).get(entry.id);
+  res.status(201).json(saved);
+});
+
+router.delete('/notes/:noteId', requireAdmin, (req, res) => {
+  db.prepare('DELETE FROM vendor_notes WHERE id = ?').run(req.params.noteId);
+  res.json({ success: true });
+});
+
 export default router;
