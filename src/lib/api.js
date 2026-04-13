@@ -113,41 +113,45 @@ export const deleteVendorAPI = async (id) => request('DELETE', `/vendors/${id}`,
 
 // ── Invoices ──────────────────────────────────────────────────────────────────
 
-export const getInvoices = async (params = {}) => {
+export const getInvoices = async (params = {}, token) => {
   const qs = new URLSearchParams(params).toString();
-  const token = getAdminToken() || getVendorToken();
-  return request('GET', `/invoices${qs ? `?${qs}` : ''}`, undefined, token);
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('GET', `/invoices${qs ? `?${qs}` : ''}`, undefined, tok);
 };
-export const getInvoice = async (id) => {
-  const token = getAdminToken() || getVendorToken();
-  return request('GET', `/invoices/${id}`, undefined, token);
+export const getInvoice = async (id, token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('GET', `/invoices/${id}`, undefined, tok);
 };
 export const createInvoice = async (data) => {
-  const token = getAdminToken() || getVendorToken();
+  const token = getVendorToken() || getAdminToken();
   return request('POST', '/invoices', data, token);
 };
 export const updateInvoice = async (id, data) => {
-  const token = getAdminToken() || getVendorToken();
+  const token = getVendorToken() || getAdminToken();
   return request('PUT', `/invoices/${id}`, data, token);
+};
+export const uploadInvoiceFileAPI = async (formData) => {
+  const token = getVendorToken() || getAdminToken();
+  return multipart('POST', '/invoices/upload', formData, token);
 };
 export const updateInvoiceStatus = async (id, status, rejectionReason) =>
   request('PATCH', `/invoices/${id}/status`, { status, rejectionReason }, getAdminToken());
 export const recordInvoicePayment = async (id, paymentData) =>
   request('PATCH', `/invoices/${id}/payment`, paymentData, getAdminToken());
-export const deleteInvoiceAPI = async (id) => {
-  const token = getAdminToken() || getVendorToken();
-  return request('DELETE', `/invoices/${id}`, undefined, token);
+export const deleteInvoiceAPI = async (id, token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('DELETE', `/invoices/${id}`, undefined, tok);
 };
 
 // ── Documents ─────────────────────────────────────────────────────────────────
 
-export const getDocuments = async (params = {}) => {
+export const getDocuments = async (params = {}, token) => {
   const qs = new URLSearchParams(params).toString();
-  const token = getAdminToken() || getVendorToken();
-  return request('GET', `/documents${qs ? `?${qs}` : ''}`, undefined, token);
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('GET', `/documents${qs ? `?${qs}` : ''}`, undefined, tok);
 };
 export const uploadDocumentAPI = async (formData) => {
-  const token = getAdminToken() || getVendorToken();
+  const token = getVendorToken() || getAdminToken();
   return multipart('POST', '/documents', formData, token);
 };
 export const reuploadDocument = async (id, formData) => {
@@ -156,28 +160,28 @@ export const reuploadDocument = async (id, formData) => {
 };
 export const updateDocumentStatus = async (id, status, rejectionReason) =>
   request('PATCH', `/documents/${id}/status`, { status, rejectionReason }, getAdminToken());
-export const deleteDocumentAPI = async (id) => {
-  const token = getAdminToken() || getVendorToken();
-  return request('DELETE', `/documents/${id}`, undefined, token);
+export const deleteDocumentAPI = async (id, token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('DELETE', `/documents/${id}`, undefined, tok);
 };
 
 // ── Notifications ─────────────────────────────────────────────────────────────
 
-export const getNotifications = async () => {
-  const token = getAdminToken() || getVendorToken();
-  return request('GET', '/notifications', undefined, token);
+export const getNotifications = async (token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('GET', '/notifications', undefined, tok);
 };
-export const markNotificationRead = async (id) => {
-  const token = getAdminToken() || getVendorToken();
-  return request('PATCH', `/notifications/${id}/read`, undefined, token);
+export const markNotificationRead = async (id, token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('PATCH', `/notifications/${id}/read`, undefined, tok);
 };
-export const markAllNotificationsRead = async () => {
-  const token = getAdminToken() || getVendorToken();
-  return request('PATCH', '/notifications/read-all', undefined, token);
+export const markAllNotificationsRead = async (token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('PATCH', '/notifications/read-all', undefined, tok);
 };
-export const deleteNotification = async (id) => {
-  const token = getAdminToken() || getVendorToken();
-  return request('DELETE', `/notifications/${id}`, undefined, token);
+export const deleteNotification = async (id, token) => {
+  const tok = token !== undefined ? token : (getAdminToken() || getVendorToken());
+  return request('DELETE', `/notifications/${id}`, undefined, tok);
 };
 
 // ── Audit ─────────────────────────────────────────────────────────────────────

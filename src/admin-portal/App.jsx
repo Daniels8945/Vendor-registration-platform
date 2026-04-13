@@ -78,13 +78,23 @@ const App = () => {
 
   const isAuthenticated = !!getAdminToken() && !!currentUser;
 
+  const handleLogout = useCallback(() => {
+    adminLogout();
+    localStorage.removeItem('admin_user');
+    setCurrentUser(null);
+    setSessionWarning(false);
+    navigate('/admin/login');
+  }, [navigate]);
+
   const fetchVendors = useCallback(async () => {
     try {
       const data = await getVendors();
       setVendors(data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      if (err?.status === 401) handleLogout();
+    }
     setLoading(false);
-  }, []);
+  }, [handleLogout]);
 
   const fetchUnread = useCallback(async () => {
     try {
@@ -128,14 +138,6 @@ const App = () => {
       return { success: false, error: err.message };
     }
   };
-
-  const handleLogout = useCallback(() => {
-    adminLogout();
-    localStorage.removeItem('admin_user');
-    setCurrentUser(null);
-    setSessionWarning(false);
-    navigate('/admin/login');
-  }, [navigate]);
 
   // Session timeout — 30 min inactivity
   useSessionTimeout({

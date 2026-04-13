@@ -37,7 +37,9 @@ export const INITIAL_FORM_DATA = {
   firstName: '',
   lastName: '',
   email: '',
-  phone: ''
+  phone: '',
+  password: '',
+  status: 'Approved',
 };
 
 export const VENDOR_STATUSES = {

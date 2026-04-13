@@ -180,6 +180,12 @@ const existingAdminCols = db.prepare("PRAGMA table_info(admin_users)").all().map
 if (!existingAdminCols.includes('reset_token'))   db.exec("ALTER TABLE admin_users ADD COLUMN reset_token TEXT");
 if (!existingAdminCols.includes('reset_expires')) db.exec("ALTER TABLE admin_users ADD COLUMN reset_expires TEXT");
 
+const existingInvoiceCols = db.prepare("PRAGMA table_info(invoices)").all().map(c => c.name);
+if (!existingInvoiceCols.includes('file_path'))          db.exec("ALTER TABLE invoices ADD COLUMN file_path TEXT");
+if (!existingInvoiceCols.includes('file_original_name')) db.exec("ALTER TABLE invoices ADD COLUMN file_original_name TEXT");
+if (!existingInvoiceCols.includes('file_mime_type'))     db.exec("ALTER TABLE invoices ADD COLUMN file_mime_type TEXT");
+if (!existingInvoiceCols.includes('file_size'))          db.exec("ALTER TABLE invoices ADD COLUMN file_size INTEGER");
+
 // ── Default data ─────────────────────────────────────────────────────────────
 
 // Default super admin (if none exists)

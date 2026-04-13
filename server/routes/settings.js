@@ -52,7 +52,7 @@ router.delete('/admin-users/:id', requireAdmin, (req, res) => {
   const user = db.prepare('SELECT * FROM admin_users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const superCount = db.prepare('SELECT COUNT(*) as c FROM admin_users WHERE role = "Super Admin"').get().c;
+  const superCount = db.prepare("SELECT COUNT(*) as c FROM admin_users WHERE role = 'Super Admin'").get().c;
   if (user.role === 'Super Admin' && superCount <= 1) {
     return res.status(400).json({ error: 'Cannot delete the last Super Admin' });
   }
@@ -66,7 +66,7 @@ router.patch('/admin-users/:id/password', requireAdmin, (req, res) => {
   const { newPassword } = req.body;
   if (!newPassword) return res.status(400).json({ error: 'newPassword required' });
   const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE admin_users SET password_hash = ?, must_change_pw = 0, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE admin_users SET password_hash = ?, must_change_pw = 0, updated_at = datetime('now') WHERE id = ?")
     .run(hash, req.params.id);
   res.json({ success: true });
 });

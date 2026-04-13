@@ -18,7 +18,7 @@ const NotificationsView = () => {
 
   const { data: notifications = [] } = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: getNotifications,
+    queryFn: () => getNotifications(),
     staleTime: 15_000,
     refetchOnWindowFocus: true,
   });

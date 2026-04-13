@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Eye, Check, X, DollarSign, Download, MoreVertical, Clock, CheckCircle, XCircle, AlertTriangle, FileDown, Package, Plus } from 'lucide-react';
+import { Search, Filter, Eye, Check, X, DollarSign, Download, MoreVertical, Clock, CheckCircle, XCircle, AlertTriangle, FileDown, Package, Plus, Paperclip, ExternalLink } from 'lucide-react';
 import { formatDate, formatCurrency, exportToCSV } from '../utils/vendorUtils';
 import { INVOICE_STATUS_COLORS } from '../utils/constants';
 import { downloadInvoicePdf } from '../../lib/invoicePdf.js';
@@ -446,6 +446,11 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                     </td>
                     <td className="px-6 py-4">
                       <span className="font-mono text-sm font-semibold text-gray-900">{invoice.invoiceNumber}</span>
+                      {invoice.fileUrl && (
+                        <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                          <Paperclip size={10} /> Uploaded
+                        </span>
+                      )}
                       {isOverdue(invoice) && (
                         <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
                           <AlertTriangle size={10} /> Overdue
@@ -456,7 +461,7 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                       <div className="font-medium text-gray-900">{getVendorName(invoice.vendorCode)}</div>
                       <div className="text-xs text-gray-400 font-mono">{invoice.vendorCode}</div>
                     </td>
-                    <td className="px-6 py-4 text-sm text-gray-600">{formatDate(invoice.invoiceDate)}</td>
+                    <td className="px-6 py-4 text-sm text-gray-600">{formatDate(invoice.submittedAt)}</td>
                     <td className={`px-6 py-4 text-sm ${isOverdue(invoice) ? 'text-orange-600 font-medium' : 'text-gray-600'}`}>
                       {formatDate(invoice.dueDate)}
                     </td>
@@ -521,6 +526,20 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
                 <Eye size={15} /> View Details
               </button>
+              {invoice.fileUrl && (
+                <a href={invoice.fileUrl} target="_blank" rel="noopener noreferrer"
+                  onClick={() => setOpenDropdown(null)}
+                  className="w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50 flex items-center gap-2">
+                  <Paperclip size={15} /> View Uploaded File
+                </a>
+              )}
+              {invoice.fileUrl && (
+                <a href={invoice.fileUrl} download={invoice.fileOriginalName || invoice.invoiceNumber}
+                  onClick={() => setOpenDropdown(null)}
+                  className="w-full text-left px-4 py-2 text-sm text-green-700 hover:bg-green-50 flex items-center gap-2">
+                  <Download size={15} /> Download Uploaded File
+                </a>
+              )}
               <button onClick={() => downloadInvoicePdfHandler(invoice)}
                 className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2">
                 <Download size={15} /> Download PDF
@@ -597,9 +616,8 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                   { label: 'Vendor', value: getVendorName(viewingInvoice.vendorCode) },
                   { label: 'Amount', value: formatCurrency(viewingInvoice.amount) },
                   { label: 'Status', value: getStatusBadge(viewingInvoice.status) },
-                  { label: 'Invoice Date', value: formatDate(viewingInvoice.invoiceDate) },
+                  { label: 'Submitted Date', value: formatDate(viewingInvoice.submittedAt) },
                   { label: 'Due Date', value: formatDate(viewingInvoice.dueDate) },
-                  { label: 'Submitted', value: formatDate(viewingInvoice.submittedAt) },
                 ].map(({ label, value }) => (
                   <div key={label}>
                     <p className="text-xs font-semibold text-gray-500 mb-1">{label}</p>
@@ -623,6 +641,24 @@ const AdminInvoicesView = ({ onShowToast, userRole = 'Super Admin' }) => {
                 <div>
                   <p className="text-xs font-semibold text-gray-500 mb-1">Notes</p>
                   <p className="text-sm text-gray-900 whitespace-pre-wrap">{viewingInvoice.notes}</p>
+                </div>
+              )}
+              {viewingInvoice.fileUrl && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <p className="text-xs font-semibold text-green-700 mb-2 flex items-center gap-1.5">
+                    <Paperclip size={13} /> Attached Invoice File
+                  </p>
+                  <p className="text-sm text-gray-700 mb-3 truncate">{viewingInvoice.fileOriginalName || 'Invoice file'}</p>
+                  <div className="flex gap-2">
+                    <a href={viewingInvoice.fileUrl} target="_blank" rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium rounded-lg transition-colors">
+                      <ExternalLink size={13} /> View File
+                    </a>
+                    <a href={viewingInvoice.fileUrl} download={viewingInvoice.fileOriginalName || viewingInvoice.invoiceNumber}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-green-300 hover:bg-green-50 text-green-700 text-xs font-medium rounded-lg transition-colors">
+                      <Download size={13} /> Download
+                    </a>
+                  </div>
                 </div>
               )}
               {viewingInvoice.rejectionReason && (

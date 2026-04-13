@@ -62,7 +62,7 @@ export async function sendVendorRegistrationEmail(vendor) {
         <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;padding:16px;margin:16px 0">
           <p style="margin:0 0 4px;font-size:12px;font-weight:600;color:#1D4ED8">Your Vendor Code</p>
           <p style="font-family:monospace;font-size:22px;font-weight:700;color:#1E40AF;letter-spacing:0.1em;margin:0">${vendor.id}</p>
-          <p style="font-size:12px;color:#3B82F6;margin:8px 0 0">Keep this code — you will use it to log in.</p>
+          <p style="font-size:12px;color:#3B82F6;margin:8px 0 0">Keep this code — you will use jjit to log in.</p>
         </div>
         <p>An admin will review your application and notify you of the outcome.</p>
       </div>

@@ -1,13 +1,42 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { COUNTRIES } from '../utils/constants';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Eye, EyeOff, Copy, RefreshCw, Check } from 'lucide-react';
+
+function generatePassword() {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const special = '@#!$';
+  const rand = (s) => s[Math.floor(Math.random() * s.length)];
+  // Guarantee at least one of each character class
+  const required = [rand(upper), rand(lower), rand(digits), rand(special)];
+  const all = upper + lower + digits + special;
+  const rest = Array.from({ length: 6 }, () => rand(all));
+  return [...required, ...rest].sort(() => Math.random() - 0.5).join('');
+}
 
 const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] }) => {
-  // Live duplicate check
+  const [showPassword, setShowPassword] = useState(false);
+  const [copied, setCopied] = useState(false);
+
   const duplicateName = formData.companyName.trim().length > 2 &&
     vendors.find(v => v.companyName.trim().toLowerCase() === formData.companyName.trim().toLowerCase());
   const duplicateEmail = formData.email.trim().length > 4 &&
     vendors.find(v => v.email.trim().toLowerCase() === formData.email.trim().toLowerCase());
+
+  const handleGenerate = () => {
+    onChange({ target: { name: 'password', value: generatePassword() } });
+    setShowPassword(true);
+  };
+
+  const handleCopy = () => {
+    if (!formData.password) return;
+    navigator.clipboard.writeText(formData.password).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -40,39 +69,19 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
         <div>
           <label className="block text-gray-900 font-semibold mb-2">Business Type</label>
           <div className="flex flex-wrap gap-4">
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="businessType"
-                value="manufacturer"
-                checked={formData.businessType === 'manufacturer'}
-                onChange={onChange}
-                className="w-4 h-4 text-blue-600"
-              />
-              <span className="ml-2 text-gray-700">Manufacturer</span>
-            </label>
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="businessType"
-                value="distributor"
-                checked={formData.businessType === 'distributor'}
-                onChange={onChange}
-                className="w-4 h-4 text-blue-600"
-              />
-              <span className="ml-2 text-gray-700">Distributor</span>
-            </label>
-            <label className="flex items-center cursor-pointer">
-              <input
-                type="radio"
-                name="businessType"
-                value="service-provider"
-                checked={formData.businessType === 'service-provider'}
-                onChange={onChange}
-                className="w-4 h-4 text-blue-600"
-              />
-              <span className="ml-2 text-gray-700">Service Provider</span>
-            </label>
+            {['manufacturer', 'distributor', 'service-provider'].map(type => (
+              <label key={type} className="flex items-center cursor-pointer">
+                <input
+                  type="radio"
+                  name="businessType"
+                  value={type}
+                  checked={formData.businessType === type}
+                  onChange={onChange}
+                  className="w-4 h-4 text-blue-600"
+                />
+                <span className="ml-2 text-gray-700 capitalize">{type.replace('-', ' ')}</span>
+              </label>
+            ))}
           </div>
         </div>
 
@@ -93,29 +102,26 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
 
         {/* Company Website */}
         <div>
-          <label className="block text-gray-900 font-semibold mb-2">
-            Company Website<span className="text-red-500">*</span>
-          </label>
+          <label className="block text-gray-900 font-semibold mb-2">Company Website</label>
           <input
-            type="url"
+            type="text"
             name="website"
-            required
             value={formData.website}
             onChange={onChange}
-            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="https://example.com"
+            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
           />
         </div>
 
         {/* Address Fields */}
         <div>
           <label className="block text-gray-900 font-semibold mb-2">
-            Company Address<span className="text-red-500">*</span>
+            Company Address
           </label>
           <div className="space-y-3">
             <input
               type="text"
               name="streetAddress"
-              required
               value={formData.streetAddress}
               onChange={onChange}
               placeholder="Street Address"
@@ -133,7 +139,6 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
               <input
                 type="text"
                 name="city"
-                required
                 value={formData.city}
                 onChange={onChange}
                 placeholder="City"
@@ -144,7 +149,7 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
                 name="region"
                 value={formData.region}
                 onChange={onChange}
-                placeholder="Region"
+                placeholder="Region / State"
                 className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400"
               />
             </div>
@@ -159,7 +164,6 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
               />
               <select
                 name="country"
-                required
                 value={formData.country}
                 onChange={onChange}
                 className="px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -246,8 +250,78 @@ const AddVendorView = ({ formData, onChange, onSubmit, onCancel, vendors = [] })
           />
         </div>
 
+        {/* Password */}
+        <div>
+          <label className="block text-gray-900 font-semibold mb-1">
+            Portal Password<span className="text-red-500">*</span>
+          </label>
+          <p className="text-xs text-gray-500 mb-2">
+            Set a password the vendor will use to log in. Share it with them securely after registration.
+          </p>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                name="password"
+                required
+                value={formData.password}
+                onChange={onChange}
+                placeholder="Enter or generate a password"
+                className="w-full px-4 py-3 pr-12 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono placeholder-gray-400 placeholder:font-sans"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleGenerate}
+              title="Generate a random password"
+              className="flex items-center gap-1.5 px-3 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors whitespace-nowrap"
+            >
+              <RefreshCw size={15} /> Generate
+            </button>
+            <button
+              type="button"
+              onClick={handleCopy}
+              disabled={!formData.password}
+              title="Copy password to clipboard"
+              className={`flex items-center gap-1.5 px-3 py-3 text-sm font-medium rounded-lg transition-colors whitespace-nowrap ${copied ? 'bg-green-100 text-green-700' : 'bg-gray-100 hover:bg-gray-200 text-gray-700 disabled:opacity-40 disabled:cursor-not-allowed'}`}
+            >
+              {copied ? <><Check size={15} /> Copied</> : <><Copy size={15} /> Copy</>}
+            </button>
+          </div>
+          {formData.password && (
+            <p className="text-xs text-amber-600 mt-1.5 flex items-center gap-1">
+              <AlertCircle size={12} /> Remember to copy and share this password with the vendor before leaving this page.
+            </p>
+          )}
+        </div>
+
+        {/* Initial Status */}
+        <div>
+          <label className="block text-gray-900 font-semibold mb-1">Initial Status</label>
+          <p className="text-xs text-gray-500 mb-2">
+            Set to <strong>Approved</strong> to grant the vendor immediate portal access, or <strong>Pending Review</strong> if further vetting is needed.
+          </p>
+          <select
+            name="status"
+            value={formData.status}
+            onChange={onChange}
+            className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="Approved">Approved — Vendor can log in immediately</option>
+            <option value="Pending Review">Pending Review — Requires admin approval first</option>
+            <option value="Inactive">Inactive — Account created but portal access disabled</option>
+          </select>
+        </div>
+
         {/* Submit Button */}
-        <div className="flex gap-3">
+        <div className="flex gap-3 pt-2">
           <button
             type="submit"
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"

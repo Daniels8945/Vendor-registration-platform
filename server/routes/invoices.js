@@ -1,6 +1,34 @@
 import { Router } from 'express';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import db from '../database.js';
 import { requireAdmin, requireAuth } from '../middleware/authMiddleware.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const UPLOADS_DIR = process.env.UPLOADS_DIR
+  ? path.resolve(process.env.UPLOADS_DIR)
+  : path.join(__dirname, '..', 'uploads');
+
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
+  filename: (_req, file, cb) => {
+    const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    cb(null, unique + path.extname(file.originalname));
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
+    cb(null, allowed.includes(file.mimetype));
+  },
+});
 
 const router = Router();
 
@@ -41,6 +69,10 @@ function formatInvoice(inv, includeLineItems = false) {
     paymentMethod: inv.payment_method,
     paymentReference: inv.payment_reference,
     paymentNotes: inv.payment_notes,
+    fileUrl: inv.file_path ? `/api/uploads/${path.basename(inv.file_path)}` : null,
+    fileOriginalName: inv.file_original_name || null,
+    fileMimeType: inv.file_mime_type || null,
+    fileSize: inv.file_size || null,
     submittedAt: inv.submitted_at,
     updatedAt: inv.updated_at,
   };
@@ -88,6 +120,45 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ ...formatInvoice(inv, true), statusHistory: history });
 });
 
+// POST /api/invoices/upload — upload an externally-created invoice file
+router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
+  const vendorCode = req.authPayload.type === 'vendor' ? req.authPayload.vendorCode : req.body.vendorCode;
+  if (!vendorCode) return res.status(400).json({ error: 'Vendor code required' });
+  if (!req.file) return res.status(400).json({ error: 'Invoice file is required' });
+
+  const d = req.body;
+  const settings = getSettings();
+  if (settings.maxInvoiceAmount && Number(d.amount) > Number(settings.maxInvoiceAmount)) {
+    fs.unlinkSync(req.file.path);
+    return res.status(400).json({ error: `Invoice amount exceeds maximum of ${settings.maxInvoiceAmount}` });
+  }
+
+  const invoiceId = `INV-${Date.now()}`;
+  const invoiceNumber = getNextInvoiceNumber(vendorCode);
+
+  db.prepare(`
+    INSERT INTO invoices (id, vendor_code, invoice_number, description, amount, status, due_date, notes,
+      file_path, file_original_name, file_mime_type, file_size, submitted_at)
+    VALUES (?, ?, ?, ?, ?, 'Submitted', ?, ?, ?, ?, ?, ?, datetime('now'))
+  `).run(
+    invoiceId, vendorCode, invoiceNumber,
+    d.description || req.file.originalname,
+    d.amount || 0,
+    d.dueDate || null,
+    d.notes || null,
+    req.file.path, req.file.originalname, req.file.mimetype, req.file.size
+  );
+
+  db.prepare("INSERT INTO invoice_status_history (invoice_id, status, changed_by) VALUES (?, 'Submitted', ?)")
+    .run(invoiceId, vendorCode);
+
+  logActivity(vendorCode, { type: 'invoice_created', title: 'Invoice Uploaded', description: `Uploaded invoice file ${invoiceNumber}`, metadata: { invoiceId, invoiceNumber, amount: d.amount } });
+  insertNotification({ id: `NOT-ADMIN-${Date.now()}`, vendorCode, isAdmin: 1, type: 'info', title: 'New Invoice Uploaded', message: `${vendorCode} uploaded invoice file ${invoiceNumber}.` });
+
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+  res.status(201).json(formatInvoice(inv, true));
+});
+
 // POST /api/invoices — create invoice
 router.post('/', requireAuth, (req, res) => {
   const d = req.body;
@@ -118,7 +189,7 @@ router.post('/', requireAuth, (req, res) => {
   }
 
   // Status history entry
-  db.prepare('INSERT INTO invoice_status_history (invoice_id, status, changed_by) VALUES (?, "Submitted", ?)')
+  db.prepare("INSERT INTO invoice_status_history (invoice_id, status, changed_by) VALUES (?, 'Submitted', ?)")
     .run(invoiceId, vendorCode);
 
   // Log activity
@@ -167,7 +238,7 @@ router.patch('/:id/status', requireAdmin, (req, res) => {
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
   if (!inv) return res.status(404).json({ error: 'Invoice not found' });
 
-  db.prepare('UPDATE invoices SET status = ?, rejection_reason = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE invoices SET status = ?, rejection_reason = ?, updated_at = datetime('now') WHERE id = ?")
     .run(status, status === 'Rejected' ? (rejectionReason || '') : null, req.params.id);
 
   // Status history
@@ -201,7 +272,7 @@ router.patch('/:id/payment', requireAdmin, (req, res) => {
     WHERE id = ?
   `).run(paymentDate, paymentMethod, paymentReference, paymentNotes, req.params.id);
 
-  db.prepare('INSERT INTO invoice_status_history (invoice_id, status, reason, changed_by) VALUES (?, "Paid", ?, ?)')
+  db.prepare("INSERT INTO invoice_status_history (invoice_id, status, reason, changed_by) VALUES (?, 'Paid', ?, ?)")
     .run(req.params.id, `Payment via ${paymentMethod}`, req.admin?.name || 'Admin');
 
   logAudit('invoice_payment_recorded', { invoiceId: req.params.id, invoiceNumber: inv.invoice_number, paymentDate, paymentMethod }, req.admin?.name || 'Admin');
@@ -221,6 +292,7 @@ router.delete('/:id', requireAuth, (req, res) => {
     if (inv.status !== 'Submitted') return res.status(400).json({ error: 'Only Submitted invoices can be deleted' });
   }
 
+  if (inv.file_path && fs.existsSync(inv.file_path)) fs.unlinkSync(inv.file_path);
   db.prepare('DELETE FROM invoices WHERE id = ?').run(req.params.id);
   logActivity(inv.vendor_code, { type: 'invoice_deleted', title: 'Invoice Deleted', description: `Deleted invoice ${inv.invoice_number}`, metadata: { invoiceId: req.params.id } });
   res.json({ success: true });

@@ -29,7 +29,7 @@ router.put('/:id', requireAdmin, (req, res) => {
   const existing = db.prepare('SELECT id FROM services WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Service not found' });
   const d = req.body;
-  db.prepare('UPDATE services SET name = ?, category = ?, unit = ?, unit_price = ?, description = ?, active = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE services SET name = ?, category = ?, unit = ?, unit_price = ?, description = ?, active = ?, updated_at = datetime('now') WHERE id = ?")
     .run(d.name, d.category, d.unit, d.unitPrice || 0, d.description, d.active !== false ? 1 : 0, req.params.id);
   const svc = db.prepare('SELECT * FROM services WHERE id = ?').get(req.params.id);
   res.json({ id: svc.id, name: svc.name, category: svc.category, unit: svc.unit, unitPrice: svc.unit_price, description: svc.description, active: !!svc.active });

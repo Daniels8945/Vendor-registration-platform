@@ -16,7 +16,7 @@ if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
-  filename: (_req, file, cb) => {
+  filename: (_req, file, cb) => { 
     const unique = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     cb(null, unique + path.extname(file.originalname));
   },
@@ -161,7 +161,7 @@ router.patch('/:id/status', requireAdmin, (req, res) => {
   const doc = db.prepare('SELECT * FROM documents WHERE id = ?').get(req.params.id);
   if (!doc) return res.status(404).json({ error: 'Document not found' });
 
-  db.prepare('UPDATE documents SET status = ?, rejection_reason = ?, updated_at = datetime("now") WHERE id = ?')
+  db.prepare("UPDATE documents SET status = ?, rejection_reason = ?, updated_at = datetime('now') WHERE id = ?")
     .run(status, status === 'Rejected' ? (rejectionReason || '') : null, req.params.id);
 
   logAudit(`document_${status.toLowerCase().replace(' ', '_')}`, { docId: req.params.id, documentName: doc.document_name, vendorCode: doc.vendor_code, reason: rejectionReason }, req.admin?.name || 'Admin');

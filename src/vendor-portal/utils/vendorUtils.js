@@ -1,43 +1,52 @@
 /**
  * Vendor Portal Utility Layer
  * All data operations now go through the REST API.
+ * Every function here explicitly passes getVendorToken() so that an admin token
+ * sitting in localStorage never leaks into vendor portal requests.
  */
 
 import {
   getInvoices,
   createInvoice,
   updateInvoice,
-  deleteInvoiceAPI,
+  deleteInvoiceAPI as _deleteInvoiceAPI,
+  uploadInvoiceFileAPI,
   getDocuments,
   uploadDocumentAPI,
   reuploadDocument,
-  deleteDocumentAPI,
+  deleteDocumentAPI as _deleteDocumentAPI,
   getNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  deleteNotification,
+  markNotificationRead as _markNotificationRead,
+  markAllNotificationsRead as _markAllNotificationsRead,
+  deleteNotification as _deleteNotification,
   getActivities,
   getVendorToken,
 } from '../../lib/api.js';
 
-// Re-export for convenience
-export {
-  getInvoices as getVendorInvoices,
-  createInvoice as submitInvoice,
-  updateInvoice as editInvoice,
-  deleteInvoiceAPI as deleteInvoice,
-  getDocuments as getVendorDocuments,
-  uploadDocumentAPI,
-  reuploadDocument,
-  deleteDocumentAPI,
-  getNotifications as getVendorNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
-  deleteNotification,
-  getActivities as getVendorActivities,
-};
+// ── Vendor-scoped wrappers ─────────────────────────────────────────────────────
+// Always send the vendor JWT, never the admin JWT, regardless of what tokens
+// happen to be stored in localStorage from a concurrent admin session.
 
-// Settings cache (populated on app load)
+export const getVendorInvoices  = ()  => getInvoices({}, getVendorToken());
+export const getVendorDocuments = ()  => getDocuments({}, getVendorToken());
+export const getVendorNotifications = () => getNotifications(getVendorToken());
+
+export const submitInvoice = createInvoice;
+export const editInvoice   = updateInvoice;
+
+export const deleteInvoiceAPI   = (id)       => _deleteInvoiceAPI(id, getVendorToken());
+export const deleteDocumentAPI  = (id)       => _deleteDocumentAPI(id, getVendorToken());
+
+export const markNotificationRead     = (id) => _markNotificationRead(id, getVendorToken());
+export const markAllNotificationsRead = ()   => _markAllNotificationsRead(getVendorToken());
+export const deleteNotification       = (id) => _deleteNotification(id, getVendorToken());
+
+export const getVendorActivities = getActivities;
+
+// Re-export upload helpers unchanged — they already use getVendorToken() || getAdminToken()
+export { uploadInvoiceFileAPI, uploadDocumentAPI, reuploadDocument };
+
+// ── Settings cache ─────────────────────────────────────────────────────────────
 let _settings = null;
 
 export const loadVendorSettings = async () => {
@@ -81,10 +90,8 @@ export const updateVendorProfile = async (vendorCode, updates) => {
   return { success: true, vendor: data };
 };
 
-// Legacy activity log helper (now goes to API automatically via invoices/documents)
-export const logActivity = async () => { /* no-op: handled server-side */ };
-
 // Legacy helpers kept for compatibility
+export const logActivity = async () => { /* no-op: handled server-side */ };
 export const getVendorByCode = async (vendorCode) => {
   const token = getVendorToken();
   const res = await fetch(`/api/vendors/${vendorCode}`, {
@@ -92,8 +99,6 @@ export const getVendorByCode = async (vendorCode) => {
   });
   return res.ok ? res.json() : null;
 };
-
-export const getNextInvoiceNumber = async () => 'auto'; // server generates this
-
-export const createVendorNotification = async () => { /* server-side */ };
-export const notifyVendorStatusChange = async () => { /* server-side */ };
+export const getNextInvoiceNumber   = async () => 'auto';
+export const createVendorNotification  = async () => { /* server-side */ };
+export const notifyVendorStatusChange  = async () => { /* server-side */ };

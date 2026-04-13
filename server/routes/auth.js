@@ -48,7 +48,7 @@ router.post('/admin/change-password', (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Current password is incorrect' });
 
   const newHash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE admin_users SET password_hash = ?, must_change_pw = 0, updated_at = datetime("now") WHERE id = ?').run(newHash, user.id);
+  db.prepare("UPDATE admin_users SET password_hash = ?, must_change_pw = 0, updated_at = datetime('now') WHERE id = ?").run(newHash, user.id);
 
   res.json({ success: true });
 });
@@ -111,7 +111,7 @@ router.post('/vendor/set-password', (req, res) => {
   }
 
   const hash = bcrypt.hashSync(newPassword || password, 10);
-  db.prepare('UPDATE vendors SET password_hash = ?, updated_at = datetime("now") WHERE id = ?').run(hash, vendorCode);
+  db.prepare("UPDATE vendors SET password_hash = ?, updated_at = datetime('now') WHERE id = ?").run(hash, vendorCode);
   res.json({ success: true });
 });
 
@@ -144,7 +144,7 @@ router.post('/vendor/reset-password', (req, res) => {
   }
 
   const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE vendors SET password_hash = ?, reset_token = NULL, reset_expires = NULL, updated_at = datetime("now") WHERE id = ?').run(hash, vendor.id);
+  db.prepare("UPDATE vendors SET password_hash = ?, reset_token = NULL, reset_expires = NULL, updated_at = datetime('now') WHERE id = ?").run(hash, vendor.id);
   res.json({ success: true });
 });
 
@@ -176,7 +176,7 @@ router.post('/admin/reset-password', (req, res) => {
   }
 
   const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE admin_users SET password_hash = ?, reset_token = NULL, reset_expires = NULL, updated_at = datetime("now") WHERE id = ?').run(hash, user.id);
+  db.prepare("UPDATE admin_users SET password_hash = ?, reset_token = NULL, reset_expires = NULL, updated_at = datetime('now') WHERE id = ?").run(hash, user.id);
   res.json({ success: true });
 });
 

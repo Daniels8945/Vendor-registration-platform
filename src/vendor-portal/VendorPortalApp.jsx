@@ -12,9 +12,11 @@ import {
   getVendorDocuments,
   getVendorNotifications,
   getVendorActivities,
+  uploadInvoiceFileAPI,
   uploadDocumentAPI,
   reuploadDocument,
   deleteDocumentAPI,
+  deleteInvoiceAPI,
   markNotificationRead,
   markAllNotificationsRead,
   deleteNotification,
@@ -26,7 +28,6 @@ import {
   getVendor,
   createInvoice,
   updateInvoice,
-  deleteInvoiceAPI,
 } from '../lib/api.js';
 import { useSessionTimeout } from '../lib/useSessionTimeout.js';
 import ResetPasswordPage from '../lib/ResetPasswordPage.jsx';
@@ -140,7 +141,10 @@ const VendorPortalApp = () => {
     if (!vendorId) return;
     try {
       const [fresh, invData, docData, notifData, actData] = await Promise.all([
-        getVendor(vendorId, getVendorToken()).catch(() => null),
+        getVendor(vendorId, getVendorToken()).catch((err) => {
+          if (err?.status === 401) throw err; // bubble up to force logout
+          return null;
+        }),
         getVendorInvoices().catch(() => []),
         getVendorDocuments().catch(() => []),
         getVendorNotifications().catch(() => []),
@@ -151,8 +155,10 @@ const VendorPortalApp = () => {
       setDocuments(docData);
       setNotifications(notifData);
       setActivities(actData);
-    } catch { /* ignore */ }
-  }, [vendorId]); // stable string dep — avoids loop when setVendor updates vendor object
+    } catch (err) {
+      if (err?.status === 401) handleLogout(); // token is invalid/expired
+    }
+  }, [vendorId, handleLogout]); // stable string dep — avoids loop when setVendor updates vendor object
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -216,6 +222,15 @@ const VendorPortalApp = () => {
       await loadData();
       return true;
     } catch (err) { showToast(err.message || 'Failed to submit invoice', 'error'); return false; }
+  };
+
+  const handleUploadInvoiceFile = async (formData) => {
+    try {
+      await uploadInvoiceFileAPI(formData);
+      showToast('Invoice file uploaded successfully');
+      await loadData();
+      return true;
+    } catch (err) { showToast(err.message || 'Failed to upload invoice file', 'error'); return false; }
   };
 
   const handleEditInvoice = async (invoiceId, updates) => {
@@ -355,6 +370,7 @@ const VendorPortalApp = () => {
                     vendor={vendor}
                     invoices={invoices}
                     onSubmitInvoice={handleSubmitInvoice}
+                    onUploadInvoiceFile={handleUploadInvoiceFile}
                     onEditInvoice={handleEditInvoice}
                     onDeleteInvoice={handleDeleteInvoice}
                   />
