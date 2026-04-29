@@ -137,6 +137,15 @@ const VendorPortalApp = () => {
   const isAuthenticated = !!getVendorToken() && !!vendor;
 
   const vendorId = vendor?.id;
+
+  const handleLogout = useCallback(() => {
+    vendorLogout();
+    localStorage.removeItem('vendor_user');
+    setVendor(null);
+    setSessionWarning(false);
+    navigate('/vendor/login');
+  }, [navigate]);
+
   const loadData = useCallback(async () => {
     if (!vendorId) return;
     try {
@@ -158,7 +167,7 @@ const VendorPortalApp = () => {
     } catch (err) {
       if (err?.status === 401) handleLogout(); // token is invalid/expired
     }
-  }, [vendorId, handleLogout]); // stable string dep — avoids loop when setVendor updates vendor object
+  }, [vendorId, handleLogout]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -189,14 +198,6 @@ const VendorPortalApp = () => {
     navigate('/vendor/dashboard');
     showToast(`Welcome back, ${vendorData.companyName}!`);
   };
-
-  const handleLogout = useCallback(() => {
-    vendorLogout();
-    localStorage.removeItem('vendor_user');
-    setVendor(null);
-    setSessionWarning(false);
-    navigate('/vendor/login');
-  }, [navigate]);
 
   // Session timeout — 30 min inactivity
   useSessionTimeout({

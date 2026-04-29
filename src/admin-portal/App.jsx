@@ -100,8 +100,10 @@ const App = () => {
     try {
       const notifs = await getNotifications();
       setUnreadNotifications(notifs.filter(n => !n.read).length);
-    } catch { /* ignore */ }
-  }, []);
+    } catch (err) {
+      if (err?.status === 401) handleLogout();
+    }
+  }, [handleLogout]);
 
   const fetchSearchData = useCallback(async () => {
     try {

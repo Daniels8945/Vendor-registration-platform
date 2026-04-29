@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { Bell, CheckCheck, Trash2, CheckCircle, XCircle, Info } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { formatDate } from '../utils/vendorUtils';
-import { getNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification as apiDeleteNotification } from '../../lib/api.js';
+import { getNotifications, markNotificationRead, markAllNotificationsRead, deleteNotification as apiDeleteNotification, getAdminToken, clearAdminToken } from '../../lib/api.js';
 
 const TYPE_ICONS = {
   success: { icon: CheckCircle, color: 'text-green-500', bg: 'bg-green-50 border-green-200' },
@@ -15,36 +16,55 @@ const QUERY_KEY = ['admin-notifications'];
 const NotificationsView = () => {
   const [filter, setFilter] = useState('all');
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
-  const { data: notifications = [] } = useQuery({
+  const handleAuthError = (err) => {
+    if (err?.status === 401) {
+      clearAdminToken();
+      localStorage.removeItem('admin_user');
+      navigate('/admin/login', { replace: true });
+    }
+  };
+
+  const { data: notifications = [], error: queryError } = useQuery({
     queryKey: QUERY_KEY,
-    queryFn: () => getNotifications(),
+    queryFn: () => getNotifications(getAdminToken()),
     staleTime: 15_000,
     refetchOnWindowFocus: true,
+    retry: (_, err) => err?.status !== 401,
   });
 
+  React.useEffect(() => {
+    if (queryError?.status === 401) handleAuthError(queryError);
+  }, [queryError]);
+
   const markReadMutation = useMutation({
-    mutationFn: markNotificationRead,
+    mutationFn: (id) => markNotificationRead(id, getAdminToken()),
     onSuccess: (_d, id) => qc.setQueryData(QUERY_KEY, prev =>
       prev.map(n => n.id === id ? { ...n, read: true } : n)),
+    onError: handleAuthError,
   });
 
   const markAllMutation = useMutation({
-    mutationFn: markAllNotificationsRead,
+    mutationFn: () => markAllNotificationsRead(getAdminToken()),
     onSuccess: () => qc.setQueryData(QUERY_KEY, prev => prev.map(n => ({ ...n, read: true }))),
+    onError: handleAuthError,
   });
 
   const deleteMutation = useMutation({
-    mutationFn: apiDeleteNotification,
+    mutationFn: (id) => apiDeleteNotification(id, getAdminToken()),
     onSuccess: (_d, id) => qc.setQueryData(QUERY_KEY, prev => prev.filter(n => n.id !== id)),
+    onError: handleAuthError,
   });
 
   const handleMarkRead = (id) => markReadMutation.mutate(id);
   const handleMarkAllRead = () => markAllMutation.mutate();
   const handleDelete = (id) => deleteMutation.mutate(id);
   const handleClearAll = async () => {
-    await Promise.all(notifications.map(n => apiDeleteNotification(n.id)));
-    qc.setQueryData(QUERY_KEY, []);
+    try {
+      await Promise.all(notifications.map(n => apiDeleteNotification(n.id, getAdminToken())));
+      qc.setQueryData(QUERY_KEY, []);
+    } catch (err) { handleAuthError(err); }
   };
 
   const filtered = filter === 'unread'
